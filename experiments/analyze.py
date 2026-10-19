@@ -172,6 +172,84 @@ def cohens_kappa(a: list[int], b: list[int]) -> float:
     return round((observed - expected) / (1 - expected), 4) if expected < 1 else 1.0
 
 
+# ------------------------------------------------------ judge validation
+
+JUDGE_METRICS = ("intent_recovered", "defect_caught", "false_alarm")
+_TRUE = {"1", "y", "yes", "true", "t"}
+_FALSE = {"0", "n", "no", "false", "f"}
+
+
+def _as_bool(value) -> int | None:
+    """A human's mark as 0/1, or None when the cell was left blank or is unreadable."""
+    v = str(value or "").strip().lower()
+    if v in _TRUE:
+        return 1
+    if v in _FALSE:
+        return 0
+    return None
+
+
+def _landis_koch(k: float) -> str:
+    if k < 0:
+        return "poor"
+    for bound, label in ((0.2, "slight"), (0.4, "fair"), (0.6, "moderate"),
+                         (0.8, "substantial")):
+        if k <= bound:
+            return label
+    return "almost perfect"
+
+
+def _agreement(a: list[int], b: list[int]) -> dict:
+    if not a:
+        return {"n": 0}
+    k = cohens_kappa(a, b)
+    return {
+        "n": len(a),
+        "percent_agreement": round(sum(x == y for x, y in zip(a, b)) / len(a), 4),
+        "kappa": k,
+        "reading": _landis_koch(k),
+    }
+
+
+def judge_agreement(paths: list[Path]) -> dict:
+    """Agreement between each human scorer and the judge, and between the humans.
+
+    Each CSV is one scorer's copy of the sample written by
+    `experiments.judge --sample-for-humans`. Rows a scorer left blank are
+    excluded from that scorer's figures rather than counted as disagreement, and
+    the count actually compared is reported next to every kappa.
+    """
+    import csv
+
+    scorers: dict[str, dict[str, dict]] = {}
+    for path in paths:
+        with Path(path).open(encoding="utf-8") as fh:
+            scorers[Path(path).stem] = {row["run_id"]: row for row in csv.DictReader(fh)}
+
+    out: dict = {"scorers": sorted(scorers), "human_vs_judge": {}, "human_vs_human": {}}
+    for name, rows in scorers.items():
+        per = {}
+        for m in JUDGE_METRICS:
+            pairs = [(_as_bool(r.get(f"human_{m}")), _as_bool(r.get(f"judge_{m}")))
+                     for r in rows.values()]
+            pairs = [(h, j) for h, j in pairs if h is not None and j is not None]
+            per[m] = _agreement([h for h, _ in pairs], [j for _, j in pairs])
+        out["human_vs_judge"][name] = per
+
+    names = sorted(scorers)
+    for i, a in enumerate(names):
+        for b in names[i + 1:]:
+            shared = sorted(set(scorers[a]) & set(scorers[b]))
+            per = {}
+            for m in JUDGE_METRICS:
+                pairs = [(_as_bool(scorers[a][r].get(f"human_{m}")),
+                          _as_bool(scorers[b][r].get(f"human_{m}"))) for r in shared]
+                pairs = [(x, y) for x, y in pairs if x is not None and y is not None]
+                per[m] = _agreement([x for x, _ in pairs], [y for _, y in pairs])
+            out["human_vs_human"][f"{a} vs {b}"] = per
+    return out
+
+
 # ------------------------------------------------------------- Study A report
 
 
@@ -336,8 +414,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--db", default=None)
     ap.add_argument("--out", default="runs/study_a_report.json")
     ap.add_argument("--study-b", help="CSV of paired ratings from the developer study")
+    ap.add_argument("--judge-agreement", nargs="+", metavar="CSV",
+                    help="one filled judge-validation CSV per human scorer")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+
+    if args.judge_agreement:
+        print(json.dumps(judge_agreement([Path(p) for p in args.judge_agreement]), indent=2))
+        return 0
 
     if args.study_b:
         print(json.dumps(_study_b_from_csv(Path(args.study_b)), indent=2))

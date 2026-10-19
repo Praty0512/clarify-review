@@ -198,3 +198,106 @@ def audit_sample(log_path: Path, n: int = 20, seed: int = 20260831) -> list[dict
         answer = (row.get("answer") or "").lower()
         row["suspected_leak"] = any(m in answer for m in LEAK_MARKERS)
     return sample
+
+
+def exchange_summary(log_path: Path) -> dict:
+    """Outcome counts per prompt version: answered, refused, empty.
+
+    Entries written before versioning was added carry no `prompt_version` and
+    are counted as v1, which is what produced them.
+    """
+    if not log_path.exists():
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for line in log_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        bucket = out.setdefault(row.get("prompt_version", "v1"),
+                                {"exchanges": 0, "answered": 0, "refused": 0, "empty": 0})
+        bucket["exchanges"] += 1
+        answer = (row.get("answer") or "").strip()
+        if not answer:
+            bucket["empty"] += 1
+        elif answer.startswith("I'm not sure"):
+            bucket["refused"] += 1
+        else:
+            bucket["answered"] += 1
+    return out
+
+
+def write_audit_sheet(log_path: Path, out: Path, n: int = 20,
+                      prompt_version: str | None = PROMPT_VERSION,
+                      seed: int = 20260831) -> int:
+    """Write the leakage hand-check as a CSV for both team members to fill.
+
+    Only substantive answers are sampled: an empty reply or a refusal cannot
+    leak, so including them would only dilute the check. Each scorer marks
+    `leak_<name>` 1 when the answer mentions code, lines, bugs or anything the
+    author's notes did not contain, and agreement is computed with
+    `experiments.label_tool agree`-style kappa afterwards.
+    """
+    import csv
+
+    if not log_path.exists():
+        return 0
+    rows = []
+    for line in log_path.read_text().splitlines():
+        if not line.strip():
+            continue
+        row = json.loads(line)
+        if prompt_version and row.get("prompt_version", "v1") != prompt_version:
+            continue
+        answer = (row.get("answer") or "").strip()
+        if answer and not answer.startswith("I'm not sure"):
+            rows.append(row)
+
+    rng = random.Random(seed)
+    sample = rng.sample(rows, min(n, len(rows)))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=[
+            "pr_id", "prompt_version", "questions", "answer", "suspected_leak",
+            "leak_scorer_1", "leak_scorer_2", "notes"])
+        w.writeheader()
+        for row in sample:
+            answer = row["answer"].strip()
+            w.writerow({
+                "pr_id": row["pr_id"],
+                "prompt_version": row.get("prompt_version", "v1"),
+                "questions": " | ".join(q.get("question", "") for q in row.get("questions", [])),
+                "answer": answer,
+                "suspected_leak": int(any(m in answer.lower() for m in LEAK_MARKERS)),
+                "leak_scorer_1": "", "leak_scorer_2": "", "notes": "",
+            })
+    return len(sample)
+
+
+def main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    ap = argparse.ArgumentParser(description="Audit the simulated author for leakage")
+    ap.add_argument("--log", default="runs/oracle_log.jsonl")
+    ap.add_argument("--summary", action="store_true",
+                    help="print answered/refused/empty counts per prompt version")
+    ap.add_argument("--audit", type=int, default=0, metavar="N",
+                    help="write a hand-check sheet of N substantive answers")
+    ap.add_argument("--prompt-version", default=PROMPT_VERSION,
+                    help="sample only this prompt version; 'all' for every version")
+    ap.add_argument("--out", default="runs/oracle_audit.csv")
+    args = ap.parse_args(argv)
+
+    log_path = Path(args.log)
+    if args.summary or not args.audit:
+        print(json.dumps(exchange_summary(log_path), indent=2))
+    if args.audit:
+        version = None if args.prompt_version == "all" else args.prompt_version
+        k = write_audit_sheet(log_path, Path(args.out), args.audit, version)
+        print(f"wrote {k} exchanges to {args.out}")
+        print("Both team members fill leak_scorer_1 / leak_scorer_2 independently "
+              "(1 = the answer goes beyond the author's notes).")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

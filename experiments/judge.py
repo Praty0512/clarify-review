@@ -260,8 +260,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.sample_for_humans:
         n = sample_for_humans(db_path, args.sample_for_humans, Path(args.out))
         print(f"wrote {n} rows to {args.out}")
-        print("Both team members fill the human_* columns independently, then run:")
-        print("  python -m experiments.analyze --judge-agreement runs/*.csv")
+        print("Copy it once per scorer (e.g. runs/judge_yashika.csv, runs/judge_pratyaksh.csv),")
+        print("fill the human_* columns independently with 1/0, then run:")
+        print("  python -m experiments.analyze --judge-agreement runs/judge_*.csv")
         return 0
 
     stats = score_all(db_path, limit=args.limit)
