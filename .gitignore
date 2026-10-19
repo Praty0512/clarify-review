@@ -7,3 +7,4 @@ data/cache/
 data/models/*.joblib
 runs/
 .pytest_cache/
+.bench/

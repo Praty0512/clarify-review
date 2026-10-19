@@ -150,3 +150,108 @@ def test_cohens_kappa_matches_known_values():
     assert cohens_kappa([1, 1, 0, 0], [1, 1, 0, 0]) == 1.0
     # Chance-level agreement on a balanced set is ~0.
     assert abs(cohens_kappa([1, 0, 1, 0], [1, 1, 0, 0])) < 1e-9
+
+
+# ---------------------------------------------------------- v2 prose stripping
+
+from experiments.strip import strip_prose_from_diff, added_prose_lines  # noqa: E402
+
+_Q = '"' * 3
+PROSE_PATCH = "\n".join([
+    "diff --git a/pkg/mod.py b/pkg/mod.py",
+    "--- a/pkg/mod.py",
+    "+++ b/pkg/mod.py",
+    "@@ -10,2 +10,9 @@ def f(x):",
+    "     y = 1",
+    "+    # Guard against negative input, which the issue reports crashes downstream.",
+    "+    if x < 0:",
+    '+        raise ValueError("x must be non-negative")  # see issue 42',
+    "+",
+    "+    " + _Q,
+    "+    Explain the rule at length.",
+    "+    " + _Q,
+    "     return y",
+    "@@ -40,2 +47,3 @@ def g():",
+    "     a = 2",
+    '+    b = "# not a comment"  # but this is',
+    "     return a",
+]) + "\n"
+
+
+def _hunk_counts_are_consistent(diff):
+    import re
+    for block in re.split(r"(?m)^(?=@@ )", diff)[1:]:
+        lines = block.splitlines()
+        m = re.match(r"@@ -\d+,(\d+) \+\d+,(\d+) @@", lines[0])
+        old_n, new_n = int(m.group(1)), int(m.group(2))
+        body = lines[1:]
+        old = sum(1 for l in body if not l.startswith("+"))
+        new = sum(1 for l in body if not l.startswith("-"))
+        if (old, new) != (old_n, new_n):
+            return False
+    return True
+
+
+def test_prose_stripping_removes_comments_and_docstrings():
+    out = strip_prose_from_diff(PROSE_PATCH)
+    assert "Guard against negative input" not in out
+    assert "Explain the rule" not in out
+    assert "see issue 42" not in out
+    assert "but this is" not in out
+    assert added_prose_lines(out) == 0
+
+
+def test_prose_stripping_leaves_every_line_of_code():
+    out = strip_prose_from_diff(PROSE_PATCH)
+    assert '+    if x < 0:' in out
+    assert 'raise ValueError("x must be non-negative")' in out
+    # A '#' inside a string literal is code, not a comment.
+    assert 'b = "# not a comment"' in out
+
+
+def test_prose_stripping_keeps_blank_lines():
+    out = strip_prose_from_diff(PROSE_PATCH)
+    assert "\n+\n" in out
+
+
+def test_rewritten_hunk_headers_match_their_bodies():
+    """A diff whose headers lie is not a diff; a reviewer would see garbage."""
+    assert _hunk_counts_are_consistent(strip_prose_from_diff(PROSE_PATCH))
+
+
+def test_later_hunks_shift_by_the_lines_removed_earlier():
+    out = strip_prose_from_diff(PROSE_PATCH)
+    second = [l for l in out.splitlines() if l.startswith("@@")][1]
+    assert second.startswith("@@ -40,2 +43,3 @@")   # 47 minus the 4 dropped lines
+
+
+def test_prose_level_strips_and_leaves_the_floor_and_treatment_identical(clear_ctx):
+    stripped, _ = strip_context(clear_ctx, level="prose")
+    again, _ = strip_context(clear_ctx, level="prose")
+    assert stripped.diff == again.diff
+    assert is_properly_stripped(stripped, level="prose")
+
+
+def test_unknown_strip_level_is_refused(clear_ctx):
+    with pytest.raises(ValueError):
+        strip_context(clear_ctx, level="everything")
+
+
+def test_hunk_that_starts_inside_an_existing_docstring_keeps_its_code():
+    """Regression: found on pylint-dev/pylint-7277 by the runner's own guard. A
+    lone closing triple quote at the top of a hunk was read as an opening one,
+    and the three lines of code after it were deleted as docstring text."""
+    q = '"' * 3
+    diff = "\n".join([
+        "diff --git a/m.py b/m.py", "--- a/m.py", "+++ b/m.py",
+        "@@ -1,4 +1,5 @@ def f():",
+        "      explanation from the existing docstring",
+        "    " + q,
+        "-    old_call()",
+        "+    if ready:",
+        "+        new_call()",
+        "     return 1",
+    ]) + "\n"
+    out = strip_prose_from_diff(diff)
+    assert "+    if ready:" in out and "+        new_call()" in out
+    assert _hunk_counts_are_consistent(out)

@@ -94,18 +94,28 @@ def run_instance(
     detector_name: str,
     oracle: Oracle,
     conditions: tuple[str, ...] = CONDITIONS,
+    strip_level: str = "prose",
 ) -> list[ReviewRun]:
-    """All three conditions for one instance."""
-    full = inst.context()
-    stripped, withheld = strip_context(full)
+    """All three conditions for one instance.
 
-    if not is_properly_stripped(stripped):
+    The floor and the treatment always receive the same stripped context; that
+    is the comparison the study rests on. At strip level "issue" the stripped
+    diff is also byte-identical to the full one. At "prose" it differs from the
+    full diff only by the comments and docstrings the patch added - never by a
+    line of code - which `_same_code` asserts.
+    """
+    full = inst.context()
+    stripped, withheld = strip_context(full, level=strip_level)
+
+    if not is_properly_stripped(stripped, level=strip_level):
         raise AssertionError(f"{inst.pr_id}: stripping left intent behind")
-    if stripped.diff != full.diff:
+    if strip_level == "issue" and stripped.diff != full.diff:
         raise AssertionError(
             f"{inst.pr_id}: stripping changed the diff; the conditions would not be "
             f"comparable"
         )
+    if strip_level == "prose" and not _same_code(full.diff, stripped.diff):
+        raise AssertionError(f"{inst.pr_id}: prose stripping altered a line of code")
 
     runs: list[ReviewRun] = []
 
@@ -128,6 +138,43 @@ def run_instance(
     return runs
 
 
+def _same_code(full_diff: str, stripped_diff: str) -> bool:
+    """True when the two diffs add the same code once comments are removed."""
+    from .strip import _strip_trailing_comment
+
+    def code(diff: str) -> list[str]:
+        from clarifyreview.ingest.diff import parse_unified_diff
+        lines = []
+        for h in parse_unified_diff(diff):
+            for a in h.added:
+                c = _strip_trailing_comment(a).rstrip()
+                if c.strip() and not c.strip().startswith("#"):
+                    lines.append(c)
+        return lines
+
+    stripped_code = code(stripped_diff)
+    # Every surviving added line must be code that was in the full diff.
+    full_code = code(full_diff)
+    return all(line in full_code for line in stripped_code) and len(stripped_code) > 0
+
+
+def _completed(db_path: Path) -> set[str]:
+    """Instances that already have all requested conditions recorded cleanly."""
+    if not db_path.exists():
+        return set()
+    import sqlite3
+    conn = sqlite3.connect(db_path)
+    try:
+        rows = conn.execute(
+            "SELECT pr_id FROM runs WHERE error IS NULL GROUP BY pr_id "
+            "HAVING COUNT(DISTINCT condition) = 3").fetchall()
+    except sqlite3.OperationalError:
+        return set()
+    finally:
+        conn.close()
+    return {r[0] for r in rows}
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Study A: the 2 x 3 ablation")
     ap.add_argument("--instances", default="data/instances.jsonl")
@@ -138,6 +185,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--conditions", nargs="*", default=list(CONDITIONS))
     ap.add_argument("--dry-run", action="store_true",
                     help="build and validate contexts without calling the API")
+    ap.add_argument("--strip-level", default="prose", choices=["issue", "prose"],
+                    help="issue = v1 (pilot); prose = v2, also strips added comments "
+                         "and docstrings")
+    ap.add_argument("--resume", action="store_true",
+                    help="skip instances already complete in --db; failed attempts "
+                         "for an instance are cleared and retried")
+    ap.add_argument("--stop-on-quota", action="store_true", default=True,
+                    help="stop the run at the first exhausted daily quota rather than "
+                         "recording a failure for every remaining instance")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -154,11 +210,27 @@ def main(argv: list[str] | None = None) -> int:
              len(instances), args.detector, ", ".join(args.conditions))
 
     if args.dry_run:
-        return _dry_run(instances)
+        return _dry_run(instances, args.strip_level)
 
     db_path = Path(args.db) if args.db else settings().clarifyreview_db
     db.init(db_path)
     oracle = Oracle()
+
+    if args.resume:
+        done = _completed(db_path)
+        before = len(instances)
+        instances = [i for i in instances if i.pr_id not in done]
+        log.info("resume: %d already complete, %d remaining", before - len(instances),
+                 len(instances))
+        # Partial attempts are discarded so the paired comparison never mixes a
+        # condition from one day with a retried condition from another.
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        for inst in instances:
+            conn.execute("DELETE FROM runs WHERE pr_id = ?", (inst.pr_id,))
+        conn.commit()
+        conn.close()
 
     total_cost = 0.0
     failures = 0
@@ -167,7 +239,8 @@ def main(argv: list[str] | None = None) -> int:
     with db.connect(db_path, autocommit_each=True) as conn:
         for i, inst in enumerate(instances, start=1):
             try:
-                runs = run_instance(inst, args.detector, oracle, tuple(args.conditions))
+                runs = run_instance(inst, args.detector, oracle, tuple(args.conditions),
+                                    strip_level=args.strip_level)
             except Exception:
                 log.exception("%s failed entirely", inst.pr_id)
                 failures += 1
@@ -187,6 +260,13 @@ def main(argv: list[str] | None = None) -> int:
                 original_commit_msg="\n".join(inst.commit_messages),
                 tests_verified=int(inst.variant == "mutant"),
             )
+            quota_hit = any(r.error and "PerDay" in r.error for r in runs)
+            if quota_hit and args.stop_on_quota:
+                # Do not record a half-finished instance; --resume will redo it.
+                log.warning("daily quota exhausted at %s; stopping. Re-run with "
+                            "--resume after the reset.", inst.pr_id)
+                break
+
             for run in runs:
                 db.record_run(conn, run)
                 total_cost += run.cost_usd
@@ -209,7 +289,7 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _dry_run(instances: list[Instance]) -> int:
+def _dry_run(instances: list[Instance], strip_level: str = "prose") -> int:
     """Validate the manipulation without spending anything.
 
     Worth running over the full set before every real run: it catches a stripping
@@ -219,9 +299,13 @@ def _dry_run(instances: list[Instance]) -> int:
     for inst in instances:
         try:
             full = inst.context()
-            stripped, withheld = strip_context(full)
-            assert is_properly_stripped(stripped), "strip left intent behind"
-            assert stripped.diff == full.diff, "strip changed the diff"
+            stripped, withheld = strip_context(full, level=strip_level)
+            assert is_properly_stripped(stripped, level=strip_level), \
+                "strip left intent behind"
+            if strip_level == "issue":
+                assert stripped.diff == full.diff, "strip changed the diff"
+            else:
+                assert _same_code(full.diff, stripped.diff), "strip altered code"
             assert full.fingerprint() != stripped.fingerprint(), "strip changed nothing"
             if withheld.is_empty():
                 log.warning("%s: nothing withheld, the oracle will have no answer",
