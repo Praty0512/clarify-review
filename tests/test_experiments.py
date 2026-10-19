@@ -255,3 +255,24 @@ def test_hunk_that_starts_inside_an_existing_docstring_keeps_its_code():
     out = strip_prose_from_diff(diff)
     assert "+    if ready:" in out and "+        new_call()" in out
     assert _hunk_counts_are_consistent(out)
+
+
+# --------------------------------------------------------- inter-rater agreement
+
+from experiments.label_tool import kappa  # noqa: E402
+
+
+def test_kappa_perfect_and_chance():
+    assert kappa(["1", "0", "1", "0"], ["1", "0", "1", "0"])[0] == 1.0
+    assert abs(kappa(["1", "0", "1", "0"], ["1", "1", "0", "0"])[0]) < 1e-9
+
+
+def test_kappa_ignores_rows_one_rater_left_blank():
+    k, info = kappa(["1", "0", "", "1"], ["1", "0", "1", ""])
+    assert info["n"] == 2 and k == 1.0
+
+
+def test_kappa_matches_the_analysis_module():
+    from experiments.analyze import cohens_kappa
+    a, b = [1, 0, 1, 1, 0, 0, 1, 0], [1, 0, 0, 1, 0, 1, 1, 0]
+    assert abs(kappa([str(x) for x in a], [str(x) for x in b])[0] - cohens_kappa(a, b)) < 1e-9

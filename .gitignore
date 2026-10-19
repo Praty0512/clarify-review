@@ -8,3 +8,4 @@ data/models/*.joblib
 runs/
 .pytest_cache/
 .bench/
+paper/node_modules/

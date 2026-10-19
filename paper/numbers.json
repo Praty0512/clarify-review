@@ -1,0 +1,178 @@
+{
+  "pilot": {
+    "available": true,
+    "attempted": 10,
+    "runs_ok": 16,
+    "runs_failed": 14,
+    "complete_triples": 5,
+    "judged": 16,
+    "per_condition": {
+      "full_plain": {
+        "n": 6,
+        "ir": 6,
+        "fa": 1,
+        "dc": 0,
+        "ms": 37359.167,
+        "conf": 0.992
+      },
+      "stripped_plain": {
+        "n": 5,
+        "ir": 5,
+        "fa": 0,
+        "dc": 0,
+        "ms": 34712.4,
+        "conf": 0.96
+      },
+      "stripped_clarify": {
+        "n": 5,
+        "ir": 5,
+        "fa": 0,
+        "dc": 0,
+        "ms": 33816.0,
+        "conf": 0.97
+      }
+    },
+    "treatment_ask_rate": 0.2,
+    "treatment_asks": 1,
+    "treatment_n": 5,
+    "questions": [
+      {
+        "question": "Is moving set_paths to the base Collection class intended to enable path updates across all Collection subclasses, or do specific subclasses need overridden logic/validation when paths change?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "matplotlib__matplotlib-26342::golden"
+      }
+    ],
+    "tests": {
+      "intent_all": {
+        "n": 5,
+        "ceiling": 1.0,
+        "floor": 1.0,
+        "treatment": 1.0,
+        "gap_recovery": null,
+        "gap_ci": [
+          null,
+          null
+        ],
+        "mcnemar_p": 1.0,
+        "discordant_treatment_better": 0,
+        "discordant_floor_better": 0,
+        "diff": 0.0,
+        "diff_ci": [
+          0.0,
+          0.0
+        ]
+      },
+      "intent_golden": {
+        "n": 5,
+        "ceiling": 1.0,
+        "floor": 1.0,
+        "treatment": 1.0,
+        "gap_recovery": null,
+        "gap_ci": [
+          null,
+          null
+        ],
+        "mcnemar_p": 1.0,
+        "discordant_treatment_better": 0,
+        "discordant_floor_better": 0,
+        "diff": 0.0,
+        "diff_ci": [
+          0.0,
+          0.0
+        ]
+      },
+      "false_alarm_golden": {
+        "n": 5,
+        "ceiling": 0.2,
+        "floor": 0.0,
+        "treatment": 0.0,
+        "gap_recovery": 0.0,
+        "gap_ci": [
+          0.0,
+          0.0
+        ],
+        "mcnemar_p": 1.0,
+        "discordant_treatment_better": 0,
+        "discordant_floor_better": 0,
+        "diff": 0.0,
+        "diff_ci": [
+          0.0,
+          0.0
+        ]
+      }
+    }
+  },
+  "v2": {
+    "available": true,
+    "attempted": 0,
+    "runs_ok": 0,
+    "runs_failed": 0,
+    "complete_triples": 0,
+    "judged": 0,
+    "per_condition": {},
+    "treatment_ask_rate": null,
+    "treatment_asks": 0,
+    "treatment_n": 0,
+    "questions": [],
+    "tests": {}
+  },
+  "mutants": {
+    "attempted": 75,
+    "by_status": {
+      "verified": 32,
+      "no_mutation_applies": 27,
+      "every_mutant_survived": 7,
+      "environment_cannot_run_tests": 9
+    },
+    "operators": {
+      "invert_comparison": 17,
+      "negate_condition": 9,
+      "drop_guard": 1,
+      "flip_constant": 4,
+      "swap_boolean_op": 1
+    }
+  },
+  "v2_design": {
+    "rows": 36,
+    "arms": {
+      "mutant/golden": 12,
+      "mutant/mutant": 12,
+      "golden/golden": 12
+    },
+    "repos": {
+      "sympy/sympy": 24,
+      "pydata/xarray": 2,
+      "sphinx-doc/sphinx": 2,
+      "astropy/astropy": 2,
+      "django/django": 2,
+      "pylint-dev/pylint": 2,
+      "pytest-dev/pytest": 1,
+      "scikit-learn/scikit-learn": 1
+    },
+    "difficulty": {
+      "15 min - 1 hour": 14,
+      "<15 min fix": 6,
+      "1-4 hours": 14,
+      ">4 hours": 2
+    }
+  },
+  "detectors": {
+    "heuristic": {
+      "model": null,
+      "n_decisions": 48,
+      "ask_rate": 0.1042,
+      "precision": 1.0,
+      "recall": 0.2083,
+      "f1": 0.3448,
+      "mean_score_stripped": 0.4521,
+      "mean_score_full": 0.0576,
+      "mean_ms": 0.1
+    }
+  },
+  "tests_passing": "116 passed in 1.80s",
+  "loc": {
+    "src": 3975,
+    "experiments": 2564,
+    "tests": 1284
+  }
+}

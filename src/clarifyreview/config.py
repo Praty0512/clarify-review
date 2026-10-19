@@ -34,7 +34,7 @@ MODELS: dict[str, dict[str, str]] = {
         # quotas are applied per model, and the pilot stopped when one model's
         # allowance ran out. None of these roles is compared across conditions.
         "question": "gemini-3.5-flash",
-        "judge": "gemini-3.7-flash",
+        "judge": "gemini-3.5-flash",
         # Deliberately weaker than the review model: a weaker oracle volunteers
         # less unasked-for information, which is the leakage failure mode Study A
         # has to defend against.
