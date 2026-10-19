@@ -11,17 +11,14 @@ Guide: Prof. Arivoli A.
 
 ## Status
 
-The system and the experiment harness are built and tested. What remains is the
-data collection and the writing — the parts that need real PRs, real developers,
-and real API spend.
-
 | | |
 |---|---|
-| **Built** | All four pipeline stages · all three ambiguity detectors · GitHub bot · experiment log · Study A harness (stripping, mutation, oracle, 2×3 runner, judge, statistics) · both providers · 101 tests |
-| **Not built** | The 300-PR hand-labelled set · verified mutants (needs the SWE-bench Docker harness) · the ablation run itself · Study B form and sessions · the paper |
+| **Built and tested** | All four pipeline stages · four detector designs · Gemini and Anthropic backends · GitHub bot · experiment log · full Study A harness · verified-mutant pipeline · Study B page · labelling and agreement tooling · paper generator · 118 offline tests |
+| **Run** | Pilot (v1 manipulation, Sept 2026) · v2 ablation on SWE-bench Verified with execution-verified mutants · detector comparison |
+| **Needs people** | The 300-PR labelling pass (two annotators) · human validation of the LLM judge · the Study B developer sessions |
 
-Nothing here has been run against the real benchmark yet. Every number the
-project eventually reports comes from `experiments/`, not from this README.
+Every number in the paper is produced by `paper/collect.py` from the experiment
+databases; nothing is typed in by hand.
 
 ---
 
@@ -257,11 +254,65 @@ that would otherwise surface as a 400 mid-run).
 
 ---
 
-## Next
+## The full workflow
 
-1. Get one SWE-bench instance through the Docker harness. It is the step most
-   likely to eat a week of environment debugging.
-2. Write the labelling codebook, calibrate on 20 PRs, then label 300 and report
-   Cohen's κ.
-3. Train detector (b) and freeze all thresholds on the dev split.
-4. Pilot the ablation at n=10, read every output by hand, then run the full set.
+Each step writes its output where the next step reads it. Steps marked *(API)*
+spend provider quota; everything else is free.
+
+```bash
+# 1. Verified defects: golden must pass FAIL_TO_PASS, mutant must fail it
+python -m experiments.verify_mutants --repo sympy/sympy --limit 75
+
+# 2. The v2 study set: verified-mutant pairs plus difficulty-selected golden patches
+python -m experiments.build_study_set --golden 12 --mutants 12
+
+# 3. Validate the manipulation (free), then run the ablation (API, resumable)
+python -m experiments.run_matrix --instances data/instances.v2.jsonl --dry-run
+python -m experiments.run_matrix --instances data/instances.v2.jsonl \
+    --db data/study_v2.db --strip-level prose --resume
+
+# 4. Score with an independent judge, then analyse (API, then free)
+python -m experiments.judge --db data/study_v2.db
+python -m experiments.analyze --db data/study_v2.db
+
+# 5. Compare detectors on constructed labels (heuristic free; uncertainty API)
+python -m experiments.compare_detectors --detectors heuristic sampling perturbation
+
+# 6. The paper, from the results
+python -m paper.collect && node paper/build_paper.js
+```
+
+### Steps that need people
+
+```bash
+# Label 300 PRs (both of you, independently), then compute kappa and train detector (b)
+python -m experiments.label_tool sheet --n 300
+python -m experiments.label_tool agree runs/labelling_sheet.csv \
+    --a annotator_1 --b annotator_2 --to-jsonl data/labelled_prs.jsonl
+python -m experiments.train_classifier --labels data/labelled_prs.jsonl --sweep-thresholds
+
+# Validate the judge against your own scoring
+python -m experiments.judge --db data/study_v2.db --sample-for-humans 60
+python -m experiments.label_tool agree runs/judge_validation_sample.csv \
+    --a human_intent_recovered --b judge_intent_recovered
+
+# Study B: build the page, send it out, merge what comes back, analyse
+python -m study.build_study --db data/study_v2.db --n 16
+python -m study.merge_responses responses/*.csv --out runs/study_b.csv
+python -m experiments.analyze --study-b runs/study_b.csv
+```
+
+### Free-tier limits (measured 19 October 2026)
+
+Google does not publish per-model free-tier limits; these were found by hitting them.
+
+| Model | Finding |
+|---|---|
+| `gemini-3.6-flash` | 20 requests per day |
+| `gemini-3.5-flash` | charged to `gemini-3.6-flash`'s quota — not a separate allowance |
+| `gemini-3.7-flash`, `gemini-3.1-flash-lite` | persistently 503 (overloaded) |
+| `gemini-3.5-flash-lite` | served as itself; used as the v2 reviewer |
+| `gemma-4-31b-it` | served as itself; supports JSON schema but rejects any thinking config |
+
+Every run records the model the provider says actually served it, so "one
+reviewer for every condition" is verified rather than assumed.
