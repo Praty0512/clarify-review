@@ -28,18 +28,16 @@ Provider = Literal["gemini", "anthropic"]
 # Run `clarifyreview models` to list what your key can actually reach.
 MODELS: dict[str, dict[str, str]] = {
     "gemini": {
-        # Fixed for the whole v2 study. Every condition is reviewed by this model.
-        "review": "gemini-3.6-flash",
-        # The other roles are spread across models on purpose: free-tier daily
-        # quotas are applied per model, and the pilot stopped when one model's
-        # allowance ran out. None of these roles is compared across conditions.
-        "question": "gemini-3.5-flash",
-        "judge": "gemini-3.5-flash",
-        # Deliberately weaker than the review model: a weaker oracle volunteers
-        # less unasked-for information, which is the leakage failure mode Study A
-        # has to defend against.
-        "oracle": "gemini-3.5-flash-lite",
-        "sampling": "gemini-3.6-flash",
+        # Fixed for the whole v2 study: every condition is reviewed by this model.
+        # Chosen under free-tier limits measured on 19 October 2026 - see below.
+        "review": "gemini-3.5-flash-lite",
+        # Question, oracle and judge run on a different model family. That keeps
+        # them off the reviewer's daily quota and, for the judge, removes the
+        # self-preference bias of a model scoring its own output.
+        "question": "gemma-4-31b-it",
+        "judge": "gemma-4-31b-it",
+        "oracle": "gemma-4-31b-it",
+        "sampling": "gemini-3.5-flash-lite",
     },
     "anthropic": {
         "review": "claude-opus-5",
@@ -59,6 +57,20 @@ MODELS: dict[str, dict[str, str]] = {
     },
 }
 
+# Measured on a free key, 19 October 2026 (Google does not publish these):
+#   gemini-3.6-flash  20 requests/day.
+#   gemini-3.5-flash  charged to gemini-3.6-flash's quota - the two share one
+#                     allowance, so spreading roles across them spreads nothing.
+#   gemini-3.7-flash, gemini-3.1-flash-lite  persistently 503 (overloaded).
+# Every run records the model that actually served it (`served_model`), so the
+# claim that all conditions used one reviewer is checked, not assumed.
+
+
+def supports_thinking_config(model: str) -> bool:
+    """Gemma rejects any thinking configuration with a 400."""
+    return not model.startswith("gemma")
+
+
 # Which models accept temperature / top_p / top_k. Every Gemini model does; on
 # Anthropic only the older tiers do.
 MODELS_ACCEPTING_TEMPERATURE = frozenset({"claude-haiku-4-5"})
@@ -66,7 +78,7 @@ MODELS_ACCEPTING_TEMPERATURE = frozenset({"claude-haiku-4-5"})
 
 def accepts_temperature(model: str) -> bool:
     """Gemini accepts sampling parameters everywhere; Anthropic does not."""
-    if model.startswith("gemini"):
+    if model.startswith(("gemini", "gemma")):
         return True
     return model in MODELS_ACCEPTING_TEMPERATURE
 
@@ -87,6 +99,7 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-3.5-flash": (0.00, 0.00),
     "gemini-3.5-flash-lite": (0.00, 0.00),
     "gemini-3.1-flash-lite": (0.00, 0.00),
+    "gemma-4-31b-it": (0.00, 0.00),
 }
 CACHE_READ_MULTIPLIER = 0.1
 CACHE_WRITE_MULTIPLIER = 1.25

@@ -27,6 +27,9 @@ class Usage:
     cost_usd: float = 0.0
     calls: int = 0
     latency_ms: int = 0
+    # The model that actually answered, as reported by the provider. It can
+    # differ from the one requested when a provider aliases models.
+    served_model: str | None = None
 
     def add(self, other: Usage) -> None:
         self.input_tokens += other.input_tokens

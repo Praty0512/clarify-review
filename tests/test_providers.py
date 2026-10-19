@@ -266,3 +266,22 @@ def test_per_day_quota_is_not_retried(monkeypatch):
     with pytest.raises(errors.ClientError):
         b.text(model="gemini-3.6-flash", system="s", cached_context="c", instruction="i")
     assert b._client.models.attempts == 1
+
+
+def test_gemma_is_never_sent_a_thinking_config():
+    """Gemma rejects any thinking configuration with a 400."""
+    assert "thinking_config" not in GeminiBackend._sampling("gemma-4-31b-it", thinking=False,
+                                                            temperature=None)
+    assert "thinking_config" in GeminiBackend._sampling("gemini-3.5-flash-lite", thinking=False,
+                                                        temperature=None)
+
+
+def test_usage_records_the_model_that_actually_served_the_request():
+    """Providers can alias one model to another; the run must record which
+    model really answered so 'one reviewer for every condition' is checkable."""
+    resp = FakeResponse(text="ok")
+    resp.model_version = "gemini-3.5-flash-lite-002"
+    b = backend(resp)
+    u = b.text(model="gemini-3.5-flash-lite", system="s", cached_context="c",
+               instruction="i").usage
+    assert u.served_model == "gemini-3.5-flash-lite-002"

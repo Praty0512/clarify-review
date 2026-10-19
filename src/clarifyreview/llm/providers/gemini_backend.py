@@ -22,7 +22,7 @@ import time
 
 from pydantic import BaseModel
 
-from ...config import cost_usd, settings
+from ...config import cost_usd, settings, supports_thinking_config
 from ..base import Backend, MissingAPIKey, Result, Usage
 
 log = logging.getLogger(__name__)
@@ -109,7 +109,7 @@ class GeminiBackend(Backend):
         cfg: dict = {}
         if temperature is not None:
             cfg["temperature"] = temperature
-        if not thinking:
+        if not thinking and supports_thinking_config(model):
             # Gemini models think by default, and the sampling detector does not
             # want that: reasoning before a one-sentence answer suppresses exactly
             # the variation being measured.
@@ -201,4 +201,5 @@ class GeminiBackend(Backend):
                               cache_read_tokens=cached),
             calls=1,
             latency_ms=int((time.monotonic() - started) * 1000),
+            served_model=getattr(response, "model_version", None) or model,
         )

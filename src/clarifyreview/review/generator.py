@@ -98,7 +98,7 @@ class ReviewGenerator:
             thinking=True,
         )
         meta = {
-            "model": self.model,
+            "model": result.usage.served_model or self.model,
             "input_tokens": result.usage.input_tokens,
             "output_tokens": result.usage.output_tokens,
             "cache_read_tokens": result.usage.cache_read_tokens,
