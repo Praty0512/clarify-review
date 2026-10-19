@@ -45,8 +45,16 @@ class GeminiBackend(Backend):
             if not key:
                 raise MissingAPIKey(KEY_HELP)
             from google import genai
+            from google.genai import types
 
-            self._client = genai.Client(api_key=key)
+            # The SDK sets no request timeout by default, and a stalled
+            # connection then blocks the whole run indefinitely: one gemma call
+            # hung for over ten minutes after a 500. A bounded wait turns that
+            # into an ordinary transient failure for `_call` to retry.
+            self._client = genai.Client(
+                api_key=key,
+                http_options=types.HttpOptions(timeout=self.REQUEST_TIMEOUT_MS),
+            )
 
     # ------------------------------------------------------------ core calls
 
@@ -151,6 +159,7 @@ class GeminiBackend(Backend):
     # them make the run unusable; with them the run merely takes longer.
     MAX_ATTEMPTS = 5
     BASE_BACKOFF_S = 4.0
+    REQUEST_TIMEOUT_MS = 180_000
 
     @staticmethod
     def _is_daily_quota(exc) -> bool:
@@ -168,6 +177,7 @@ class GeminiBackend(Backend):
         """Retry transient failures; fail fast on anything the request caused."""
         import random
 
+        import httpx
         from google.genai import errors
 
         last: Exception | None = None
@@ -196,6 +206,10 @@ class GeminiBackend(Backend):
                 last = exc
                 log.warning("Gemini unavailable (attempt %d/%d): %s",
                             attempt, self.MAX_ATTEMPTS, getattr(exc, "code", "?"))
+            except (httpx.TimeoutException, httpx.TransportError) as exc:
+                last = exc
+                log.warning("Gemini request timed out or dropped (attempt %d/%d): %s",
+                            attempt, self.MAX_ATTEMPTS, type(exc).__name__)
 
             if attempt < self.MAX_ATTEMPTS:
                 # Exponential backoff with jitter, so a batch of parallel runs

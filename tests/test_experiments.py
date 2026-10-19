@@ -276,3 +276,63 @@ def test_kappa_matches_the_analysis_module():
     from experiments.analyze import cohens_kappa
     a, b = [1, 0, 1, 1, 0, 0, 1, 0], [1, 0, 0, 1, 0, 1, 1, 0]
     assert abs(kappa([str(x) for x in a], [str(x) for x in b])[0] - cohens_kappa(a, b)) < 1e-9
+
+
+# --------------------------------------------------------------------- oracle
+
+class _RecordingLLM:
+    """Stands in for the facade and remembers what the oracle asked for."""
+
+    def __init__(self, reply="I wanted to stop the crash on empty input."):
+        self.reply = reply
+        self.calls = []
+
+    def text(self, **kwargs):
+        from clarifyreview.llm.base import Result, Usage
+        self.calls.append(kwargs)
+        return Result(value=self.reply, usage=Usage())
+
+
+def _questions():
+    from clarifyreview.types import ClarifyingQuestions
+    return ClarifyingQuestions.model_validate({"ambiguity_summary": "purpose", "questions": [{
+        "target": "intent", "question": "Is this meant to change behaviour?",
+        "why_needed": "The diff alone does not say."}]})
+
+
+def test_oracle_budget_leaves_room_for_hidden_reasoning(clear_ctx, tmp_path):
+    # Gemma reasons internally even with thinking off, and those tokens count
+    # against max_tokens. At 400 every answer came back empty, which silently
+    # turned the treatment into a second floor.
+    from experiments.oracle import Oracle
+    llm = _RecordingLLM()
+    _, withheld = strip_context(clear_ctx)
+    Oracle(llm=llm, model="gemma-4-31b-it", log_path=tmp_path / "o.jsonl").answer(
+        "x", _questions(), withheld)
+    assert llm.calls[0]["max_tokens"] >= 2000
+
+
+def test_oracle_logs_empty_answers_as_such(clear_ctx, tmp_path):
+    import json
+    from experiments.oracle import PROMPT_VERSION, Oracle
+    log = tmp_path / "o.jsonl"
+    _, withheld = strip_context(clear_ctx)
+    out = Oracle(llm=_RecordingLLM(reply="  "), model="m", log_path=log).answer(
+        "x", _questions(), withheld)
+    assert out is None
+    row = json.loads(log.read_text())
+    assert row["note"] == "empty response"
+    assert row["prompt_version"] == PROMPT_VERSION
+
+
+def test_oracle_never_sees_the_diff(clear_ctx, tmp_path):
+    from experiments.oracle import Oracle
+    llm = _RecordingLLM()
+    _, withheld = strip_context(clear_ctx)
+    Oracle(llm=llm, model="m", log_path=tmp_path / "o.jsonl").answer(
+        "x", _questions(), withheld)
+    sent = llm.calls[0]["cached_context"] + llm.calls[0]["instruction"]
+    for hunk in clear_ctx.hunks:
+        for line in hunk.added:
+            if len(line.strip()) > 12:
+                assert line.strip() not in sent

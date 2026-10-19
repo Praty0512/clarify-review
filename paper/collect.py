@@ -80,6 +80,12 @@ def study(db: Path) -> dict:
     out["treatment_ask_rate"] = round((ask["a"] or 0) / ask["n"], 4) if ask["n"] else None
     out["treatment_asks"] = ask["a"] or 0
     out["treatment_n"] = ask["n"]
+    # Asking is not the same as being answered: an oracle refusal or an empty
+    # reply leaves the treatment with no more intent than the floor had.
+    out["treatment_answered"] = q(conn, """SELECT COUNT(*) n FROM runs
+        WHERE condition='stripped_clarify' AND error IS NULL AND answered=1""")[0]["n"]
+    out["treatment_refused"] = q(conn, """SELECT COUNT(*) n FROM clarifications
+        WHERE answer LIKE 'I''m not sure%'""")[0]["n"] if out["treatment_asks"] else 0
     try:
         qs = q(conn, """SELECT c.question, c.answer, r.pr_id FROM clarifications c
                         JOIN runs r ON r.id=c.run_id""")

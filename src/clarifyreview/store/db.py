@@ -115,7 +115,11 @@ def connect(path: Path, autocommit_each: bool = False) -> Iterator[sqlite3.Conne
     Short-lived callers keep the single-transaction default.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, isolation_level=None if autocommit_each else "")
+    # A busy timeout rather than the default 5 s: the judge, the runner and an
+    # analysis query can legitimately share the log, and "database is locked"
+    # once killed a judge pass part-way through.
+    conn = sqlite3.connect(path, timeout=60,
+                           isolation_level=None if autocommit_each else "")
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:

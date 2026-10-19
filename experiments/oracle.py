@@ -37,16 +37,32 @@ the code. You are not reviewing anything.
 Answer the question that was asked, in one or two sentences, using only what the \
 notes contain. Speak in the first person, the way a developer answers a reviewer.
 
+The reviewer can see the code and you cannot, so questions will often be phrased \
+around code ("are you intentionally removing X?", "is the goal of this change Y?"). \
+Those are questions about intent, and the notes are a statement of intent: answer \
+them by saying what problem you were fixing and what behaviour you wanted, as the \
+notes describe it. You do not need to have seen the code to say what it was for.
+
 Hard rules:
 - Do not mention specific line numbers, function bodies, or code you were not told \
   about. You have not seen the diff.
 - Do not point out bugs, risks, or things the reviewer should check. That is the \
   reviewer's job, not yours.
 - Do not volunteer anything beyond what the question asks.
-- If the notes do not contain the answer, say exactly: "I'm not sure, I don't have \
+- Only if the notes say nothing about the intent being asked about, say exactly: "I'm not sure, I don't have \
   that context to hand." Do not guess, and do not fill the gap with a plausible \
   reason.\
 """
+
+
+ORACLE_MAX_TOKENS = 4000
+
+# Bumped whenever SYSTEM changes, and logged with every exchange, so an audit can
+# tell which wording produced which answer.
+#   v1  original; refused any question phrased around code (2 of 6 refused)
+#   v2  answers intent questions from the notes; refusal only when the notes are
+#       silent on the intent asked about
+PROMPT_VERSION = "v2"
 
 
 class Oracle:
@@ -87,12 +103,17 @@ class Oracle:
             system=SYSTEM,
             cached_context=f"AUTHOR'S NOTES\n{notes}",
             instruction=f"The reviewer asks:\n{asked}\n\nAnswer as the author.",
-            max_tokens=400,
+            # Generous on purpose. Gemma reasons internally whether or not
+            # thinking is requested, and those hidden tokens count against this
+            # limit: at 400 every answer was truncated to an empty string before
+            # a word of it was written, which silently turned the treatment
+            # condition into a second floor.
+            max_tokens=ORACLE_MAX_TOKENS,
             thinking=False,
         )
         self.cost_usd += result.usage.cost_usd
         answer = result.value.strip()
-        self._log(pr_id, questions, answer, None)
+        self._log(pr_id, questions, answer, None if answer else "empty response")
         return answer or None
 
     @staticmethod
@@ -119,6 +140,8 @@ class Oracle:
                         "questions": [q.model_dump() for q in questions.questions],
                         "answer": answer,
                         "note": note,
+                        "prompt_version": PROMPT_VERSION,
+                        "model": self.model,
                     },
                     sort_keys=True,
                 )

@@ -207,6 +207,24 @@ def test_retries_a_transient_503_and_succeeds(monkeypatch):
     assert b._client.models.attempts == 3
 
 
+def test_a_stalled_request_times_out_and_is_retried(monkeypatch):
+    """A hung connection once blocked a run for ten minutes; it must be transient."""
+    import httpx
+    b = _flaky_backend(httpx.ReadTimeout("stalled"), 1, monkeypatch)
+    assert b.text(model="gemma-4-31b-it", system="s", cached_context="c",
+                  instruction="i").value == "ok"
+    assert b._client.models.attempts == 2
+
+
+def test_real_client_is_built_with_a_request_timeout(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "test-not-a-real-key")
+    from clarifyreview.config import reset_settings
+    reset_settings()
+    b = GeminiBackend()
+    assert b._client._api_client._http_options.timeout == GeminiBackend.REQUEST_TIMEOUT_MS
+    reset_settings()
+
+
 def test_retries_a_429_rate_limit(monkeypatch):
     b = _flaky_backend(_err("ClientError", 429), 1, monkeypatch)
     assert b.text(model="gemini-3.6-flash", system="s", cached_context="c",

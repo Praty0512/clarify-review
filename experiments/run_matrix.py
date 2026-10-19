@@ -158,16 +158,18 @@ def _same_code(full_diff: str, stripped_diff: str) -> bool:
     return all(line in full_code for line in stripped_code) and len(stripped_code) > 0
 
 
-def _completed(db_path: Path) -> set[str]:
+def _completed(db_path: Path, conditions: tuple[str, ...] = CONDITIONS) -> set[str]:
     """Instances that already have all requested conditions recorded cleanly."""
     if not db_path.exists():
         return set()
     import sqlite3
     conn = sqlite3.connect(db_path)
+    marks = ",".join("?" for _ in conditions)
     try:
         rows = conn.execute(
-            "SELECT pr_id FROM runs WHERE error IS NULL GROUP BY pr_id "
-            "HAVING COUNT(DISTINCT condition) = 3").fetchall()
+            f"SELECT pr_id FROM runs WHERE error IS NULL AND condition IN ({marks}) "
+            f"GROUP BY pr_id HAVING COUNT(DISTINCT condition) = ?",
+            (*conditions, len(conditions))).fetchall()
     except sqlite3.OperationalError:
         return set()
     finally:
@@ -191,6 +193,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--resume", action="store_true",
                     help="skip instances already complete in --db; failed attempts "
                          "for an instance are cleared and retried")
+    ap.add_argument("--only", nargs="*", default=None, metavar="PR_ID",
+                    help="restrict the run to these instance ids")
+    ap.add_argument("--redo", action="store_true",
+                    help="with --only: discard the requested conditions for those "
+                         "instances and run them again (e.g. after an oracle fix)")
     ap.add_argument("--stop-on-quota", action="store_true", default=True,
                     help="stop the run at the first exhausted daily quota rather than "
                          "recording a failure for every remaining instance")
@@ -204,6 +211,13 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     instances = [Instance.from_json(line) for line in path.read_text().splitlines() if line.strip()]
+    if args.only:
+        wanted = set(args.only)
+        instances = [i for i in instances if i.pr_id in wanted]
+        missing = wanted - {i.pr_id for i in instances}
+        if missing:
+            log.error("not in %s: %s", path, ", ".join(sorted(missing)))
+            return 1
     if args.limit:
         instances = instances[: args.limit]
     log.info("%d instances, detector=%s, conditions=%s",
@@ -216,19 +230,27 @@ def main(argv: list[str] | None = None) -> int:
     db.init(db_path)
     oracle = Oracle()
 
-    if args.resume:
-        done = _completed(db_path)
+    conditions = tuple(args.conditions)
+    if args.redo and not args.only:
+        log.error("--redo needs --only; refusing to discard a whole run")
+        return 1
+    if args.resume or args.redo:
+        done = set() if args.redo else _completed(db_path, conditions)
         before = len(instances)
         instances = [i for i in instances if i.pr_id not in done]
         log.info("resume: %d already complete, %d remaining", before - len(instances),
                  len(instances))
         # Partial attempts are discarded so the paired comparison never mixes a
-        # condition from one day with a retried condition from another.
+        # condition from one day with a retried condition from another. Only the
+        # requested conditions are touched: redoing the treatment after an oracle
+        # fix must leave the floor and ceiling it is compared against intact.
         import sqlite3
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(db_path, timeout=60)
         conn.execute("PRAGMA foreign_keys = ON")
+        marks = ",".join("?" for _ in conditions)
         for inst in instances:
-            conn.execute("DELETE FROM runs WHERE pr_id = ?", (inst.pr_id,))
+            conn.execute(f"DELETE FROM runs WHERE pr_id = ? AND condition IN ({marks})",
+                         (inst.pr_id, *conditions))
         conn.commit()
         conn.close()
 
@@ -239,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     with db.connect(db_path, autocommit_each=True) as conn:
         for i, inst in enumerate(instances, start=1):
             try:
-                runs = run_instance(inst, args.detector, oracle, tuple(args.conditions),
+                runs = run_instance(inst, args.detector, oracle, conditions,
                                     strip_level=args.strip_level)
             except Exception:
                 log.exception("%s failed entirely", inst.pr_id)
