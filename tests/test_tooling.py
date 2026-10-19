@@ -106,3 +106,36 @@ def test_dev_scoring_resumes_from_its_cache(tmp_path, monkeypatch):
     scores, done = score_dev(["sampling"], ctxs, cache, None, 8)
     assert calls == ["a", "b"]                  # nothing paid for twice
     assert scores["sampling"] == [0.5, 0.5]
+
+
+def test_replay_shows_all_three_conditions_offline(tmp_path, capsys):
+    import sqlite3
+
+    from clarifyreview.cli import main
+    from clarifyreview.store import db as store
+
+    path = tmp_path / "log.db"
+    store.init(path)
+    conn = sqlite3.connect(path)
+    conn.execute("INSERT INTO instances (pr_id, variant, has_defect, problem_statement) "
+                 "VALUES ('x::golden', 'golden', 0, 'Allow non-disjoint cycles.')")
+    review = {"intent_summary": "S", "verdict": "approve", "findings": []}
+    for cond, asked in (("stripped_plain", 0), ("stripped_clarify", 1), ("full_plain", 0)):
+        payload = {"review": review}
+        if asked:
+            payload["clarification"] = {"questions": {"questions": [
+                {"target": "f.py:1", "question": "Intentional?"}]}, "answer": "Yes."}
+        conn.execute("INSERT INTO runs (pr_id, condition, ask, ambiguity_score, threshold, "
+                     "detector_why, asked, payload) VALUES (?,?,?,?,?,?,?,?)",
+                     ("x::golden", cond, asked, 0.6, 0.5, "rules fired", asked,
+                      json.dumps(payload)))
+    conn.commit()
+    conn.close()
+
+    assert main(["replay", "--db", str(path), "--pr-id", "x::golden"]) == 0
+    out = capsys.readouterr().out
+    for marker in ("FLOOR", "TREATMENT", "CEILING", "[stage 2] ASK", "Q [f.py:1] Intentional?",
+                   "A Yes.", "Allow non-disjoint cycles."):
+        assert marker in out
+    assert main(["replay", "--db", str(path), "--list"]) == 0
+    assert "x::golden" in capsys.readouterr().out

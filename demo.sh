@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # ClarifyReview — the demo, in the order it makes sense to a reviewer.
 #
-#   ./demo.sh          Stages 1 and 2 only. No API key, no network, no cost.
+#   ./demo.sh          Stages 1 and 2 live, Stages 3 and 4 replayed from the
+#                      study log. No API key, no network, no cost.
 #   ./demo.sh --full   Adds Stages 3 and 4. Needs GEMINI_API_KEY.
 set -u
 CR="${CR:-.venv/bin/clarifyreview}"
@@ -35,9 +36,11 @@ if [ "$FULL" = "1" ]; then
   say "Generates a clarifying question, then reviews. Needs GEMINI_API_KEY."
   cmd "$CR review --diff examples/ambiguous.diff --pr-id demo"
 else
-  hr "5. Stages 3 and 4"
-  say "Skipped — these call the model provider. Run './demo.sh --full' with"
-  say "GEMINI_API_KEY set to include them."
+  hr "5. Stages 3 and 4 — a recorded run from the study, replayed offline"
+  say "The same pull request reviewed three ways. Without its issue text the"
+  say "reviewer misreads it; ClarifyReview asks, gets an answer, and matches the"
+  say "full-context review. ('./demo.sh --full' runs Stages 3-4 live instead.)"
+  cmd "$CR replay --db data/study_v2.db"
 fi
 
 hr "6. The evidence underneath"

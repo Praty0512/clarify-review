@@ -3,6 +3,8 @@ __pycache__/
 *.pyc
 .env
 data/*.db
+# The completed study log is the paper's raw data and the offline demo's source.
+!data/study_v2.db
 data/cache/
 data/models/*.joblib
 runs/

@@ -5,6 +5,7 @@
     clarifyreview detect      --repo owner/name --pr 42 [--detector sampling]
     clarifyreview review      --repo owner/name --pr 42 [--post]
     clarifyreview serve       [--port 8000]
+    clarifyreview replay      [--db data/study_v2.db] [--pr-id ID | --list]
 
 `--diff` accepts a local diff file anywhere `--repo/--pr` is accepted, so the
 whole pipeline can be exercised without touching GitHub or spending an API call
@@ -190,6 +191,93 @@ def cmd_models(args) -> int:
     return 0
 
 
+CONDITION_LABELS = (
+    ("stripped_plain", "FLOOR      intent withheld, single pass"),
+    ("stripped_clarify", "TREATMENT  intent withheld, ClarifyReview"),
+    ("full_plain", "CEILING    full context, single pass"),
+)
+DEFAULT_REPLAY = "sympy__sympy-12481::golden"
+
+
+def cmd_replay(args) -> int:
+    """Replay a recorded study instance through all four stages, offline.
+
+    Stages 3 and 4 call the model provider, which is slow and can fail on a
+    busy free tier - the wrong thing to depend on in front of an audience. Every
+    run is logged in full, so the recorded one can be shown instead: the same
+    pull request in all three conditions, with the question asked, the answer
+    received and how the judge scored each review.
+    """
+    import sqlite3
+
+    path = Path(args.db)
+    if not path.exists():
+        print(f"no experiment log at {path}", file=sys.stderr)
+        return 1
+    conn = sqlite3.connect(path)
+    conn.row_factory = sqlite3.Row
+    judged = bool(conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='judgements'").fetchone())
+
+    if args.list:
+        rows = conn.execute(
+            "SELECT pr_id, ambiguity_score, answered FROM runs "
+            "WHERE condition='stripped_clarify' AND asked=1 AND error IS NULL "
+            "ORDER BY pr_id").fetchall()
+        print(f"{len(rows)} recorded instances where the detector asked:\n")
+        for r in rows:
+            print(f"  {r['pr_id']:<45} score={r['ambiguity_score']:.3f}")
+        return 0
+
+    pr_id = args.pr_id or DEFAULT_REPLAY
+    inst = conn.execute("SELECT * FROM instances WHERE pr_id=?", (pr_id,)).fetchone()
+    if inst is None:
+        print(f"{pr_id} is not in {path}; try --list", file=sys.stderr)
+        return 1
+
+    def rule(title: str) -> None:
+        print(f"\n── {title} " + "─" * max(4, 66 - len(title)))
+
+    rule(f"{pr_id}  ({'injected defect: ' + inst['mutation_op'] if inst['has_defect'] else 'accepted fix, no defect'})")
+    print("What the author actually wanted (withheld from the floor and treatment):")
+    import textwrap
+
+    issue = " ".join((inst["problem_statement"] or "").split())
+    print(textwrap.indent(textwrap.fill(textwrap.shorten(issue, 420, placeholder=" ..."), 76), "  "))
+
+    for condition, label in CONDITION_LABELS:
+        run = conn.execute(
+            "SELECT * FROM runs WHERE pr_id=? AND condition=? AND error IS NULL "
+            "ORDER BY id DESC LIMIT 1", (pr_id, condition)).fetchone()
+        if run is None:
+            continue
+        payload = json.loads(run["payload"])
+        rule(label)
+        if condition == "stripped_clarify":
+            print(f"[stage 2] {'ASK' if run['ask'] else 'PROCEED'}  "
+                  f"score {run['ambiguity_score']:.3f} (threshold {run['threshold']:.2f})")
+            print(f"          {run['detector_why']}")
+            clar = payload.get("clarification")
+            if clar:
+                for q in clar["questions"]["questions"]:
+                    print(f"[stage 3] Q [{q['target']}] {q['question']}")
+                print(f"[stage 3] A {clar.get('answer') or '(no answer)'}")
+        review = payload.get("review") or {}
+        print(f"[stage 4] intent : {review.get('intent_summary')}")
+        print(f"          verdict: {review.get('verdict')}, "
+              f"{len(review.get('findings', []))} finding(s)")
+        for f in review.get("findings", [])[:3]:
+            print(f"          - [{f['severity']}/{f['category']}] {f['claim'][:110]}")
+        if judged:
+            j = conn.execute("SELECT * FROM judgements WHERE run_id=?", (run["id"],)).fetchone()
+            if j:
+                marks = [("intent recovered", j["intent_recovered"])]
+                marks.append(("defect caught", j["defect_caught"]) if inst["has_defect"]
+                             else ("false alarm", j["false_alarm"]))
+                print("[judge]   " + ",  ".join(f"{k}: {'yes' if v else 'no'}" for k, v in marks))
+    return 0
+
+
 def cmd_serve(args) -> int:
     import uvicorn
 
@@ -239,6 +327,12 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("models", help="show configured models and what the key can reach")
     p.set_defaults(func=cmd_models)
+
+    p = sub.add_parser("replay", help="replay a recorded study run, all stages, offline")
+    p.add_argument("--db", default="data/study_v2.db")
+    p.add_argument("--pr-id", help=f"instance to replay (default {DEFAULT_REPLAY})")
+    p.add_argument("--list", action="store_true", help="list instances where it asked")
+    p.set_defaults(func=cmd_replay)
 
     p = sub.add_parser("serve", help="run the webhook receiver")
     p.add_argument("--host", default="127.0.0.1")
