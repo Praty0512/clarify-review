@@ -1,0 +1,24 @@
+Metadata-Version: 2.4
+Name: clarifyreview
+Version: 0.1.0
+Summary: A pull request reviewer that detects ambiguous intent and asks before it critiques.
+Requires-Python: >=3.11
+Requires-Dist: anthropic>=1.0
+Requires-Dist: pydantic>=2.7
+Requires-Dist: pydantic-settings>=2.2
+Requires-Dist: httpx>=0.27
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.29
+Requires-Dist: scikit-learn>=1.4
+Requires-Dist: numpy>=1.26
+Requires-Dist: scipy>=1.12
+Provides-Extra: bench
+Requires-Dist: datasets>=2.19; extra == "bench"
+Provides-Extra: embed
+Requires-Dist: sentence-transformers>=2.7; extra == "embed"
+Provides-Extra: polyglot
+Requires-Dist: tree-sitter>=0.22; extra == "polyglot"
+Requires-Dist: tree-sitter-python>=0.21; extra == "polyglot"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.23; extra == "dev"
