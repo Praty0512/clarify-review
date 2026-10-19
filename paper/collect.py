@@ -93,6 +93,41 @@ def study(db: Path) -> dict:
     except sqlite3.OperationalError:
         out["questions"] = []
 
+    # Where the effect can come from. The treatment can only beat the floor on an
+    # instance the floor got wrong, the detector flagged, and the author answered;
+    # counting each step shows which one limits the result.
+    try:
+        rows = q(conn, """
+            SELECT r.pr_id, r.condition, r.asked, j.intent_recovered ir,
+                   (SELECT c.answer FROM clarifications c WHERE c.run_id = r.id LIMIT 1) ans
+            FROM runs r JOIN judgements j ON j.run_id = r.id WHERE r.error IS NULL""")
+        by: dict = {}
+        for r in rows:
+            by.setdefault(r["pr_id"], {})[r["condition"]] = dict(r)
+        trip = {k: v for k, v in by.items() if len(v) == 3}
+        misses = [k for k, v in trip.items() if not v["stripped_plain"]["ir"]]
+        asked_on = [k for k in misses if trip[k]["stripped_clarify"]["asked"]]
+
+        def substantive(a):
+            return bool(a) and not a.startswith("I'm not sure")
+
+        answered_on = [k for k in asked_on if substantive(trip[k]["stripped_clarify"]["ans"])]
+        recovered = [k for k in answered_on if trip[k]["stripped_clarify"]["ir"]]
+        out["funnel"] = {
+            "floor_misses": len(misses),
+            "ceiling_also_missed": sum(1 for k in misses if not trip[k]["full_plain"]["ir"]),
+            "detector_asked": len(asked_on),
+            "author_answered": len(answered_on),
+            "treatment_recovered": len(recovered),
+            "missed_ids": sorted(misses),
+            "recovered_ids": sorted(recovered),
+            "asked_total": sum(1 for v in trip.values() if v["stripped_clarify"]["asked"]),
+            "answered_total": sum(1 for v in trip.values()
+                                  if substantive(v["stripped_clarify"]["ans"])),
+        }
+    except sqlite3.OperationalError:
+        out["funnel"] = {}
+
     tests = {}
     for label, variant, metric in [("intent_all", None, "intent_recovered"),
                                    ("intent_golden", "golden", "intent_recovered"),

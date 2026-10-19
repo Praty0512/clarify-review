@@ -20,6 +20,7 @@ import docx
 import pptx
 from docx.shared import Pt, RGBColor
 from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -88,6 +89,157 @@ def correct_pptx(path: Path, fixes) -> int:
                         n += replace_in_runs(p.runs, old, new)
     pres.save(path)
     return n
+
+
+# ------------------------------------------------------------ docx editing
+
+def _set_text(p_el, text: str, bold_prefix: str = "") -> None:
+    """Replace a paragraph's runs with `text`, keeping the first run's format.
+
+    A bold lead-in ("Finding.") is written as a second run cloned from the
+    first, so it inherits font, size and colour and differs only in weight.
+    """
+    from docx.oxml.ns import qn
+
+    runs = p_el.findall(qn("w:r"))
+    if not runs:
+        raise ValueError("template paragraph has no run to inherit formatting from")
+    proto = copy.deepcopy(runs[0])
+    for r in p_el.findall(qn("w:r")) + p_el.findall(qn("w:hyperlink")):
+        p_el.remove(r)
+
+    def add(t: str, bold: bool | None) -> None:
+        r = copy.deepcopy(proto)
+        for child in list(r):
+            if child.tag != qn("w:rPr"):
+                r.remove(child)
+        rpr = r.find(qn("w:rPr"))
+        if rpr is not None:
+            for b in rpr.findall(qn("w:b")) + rpr.findall(qn("w:bCs")):
+                rpr.remove(b)
+        run = Run(r, None)
+        run.text = t
+        if bold:
+            run.bold = True
+        p_el.append(r)
+
+    if bold_prefix:
+        add(bold_prefix, True)
+    add(text, None)
+
+
+def insert_paragraph_after(anchor_el, template: Paragraph, text: str,
+                           bold_prefix: str = ""):
+    el = copy.deepcopy(template._p)
+    _set_text(el, text, bold_prefix)
+    anchor_el.addnext(el)
+    return el
+
+
+def insert_table_after(anchor_el, template_tbl, rows: list[list[str]]):
+    """Clone a table, resize its body rows to fit `rows`, and fill it.
+
+    The template must have the same column count. Header formatting comes from
+    the template's first row and body formatting from its second.
+    """
+    from docx.table import Table
+
+    el = copy.deepcopy(template_tbl._tbl)
+    anchor_el.addnext(el)
+    t = Table(el, template_tbl._parent)
+    body_proto = copy.deepcopy(t.rows[1]._tr)
+    for r in list(t.rows)[1:]:
+        el.remove(r._tr)
+    for _ in rows[1:]:
+        el.append(copy.deepcopy(body_proto))
+    for r_i, values in enumerate(rows):
+        for c_i, v in enumerate(values):
+            cell = t.rows[r_i].cells[c_i]
+            ps = cell.paragraphs
+            for extra in ps[1:]:
+                extra._p.getparent().remove(extra._p)
+            _set_text(ps[0]._p, v)
+    return el
+
+
+def find_para(d, startswith: str) -> Paragraph:
+    for p in d.paragraphs:
+        if p.text.strip().startswith(startswith):
+            return p
+    raise KeyError(startswith)
+
+
+# ------------------------------------------------------------ pptx editing
+
+def duplicate_slide(pres, src_index: int, insert_at: int):
+    """Copy slide `src_index` (0-based) to position `insert_at`.
+
+    python-pptx has no slide copy. The shapes are deep-copied onto a new slide
+    with the same layout, which carries their geometry and formatting exactly;
+    the placeholders the layout adds are removed first so nothing is doubled.
+    """
+    src = pres.slides[src_index]
+    new = pres.slides.add_slide(src.slide_layout)
+    for sh in list(new.shapes):
+        sh._element.getparent().remove(sh._element)
+    for sh in src.shapes:
+        new.shapes._spTree.append(copy.deepcopy(sh._element))
+    ids = pres.slides._sldIdLst
+    el = ids[-1]
+    ids.remove(el)
+    ids.insert(insert_at, el)
+    return new
+
+
+def set_shape_text(shape, lines: list[str]) -> None:
+    """Rewrite a text frame paragraph by paragraph, keeping each one's runs' format.
+
+    Line i takes the format of paragraph i when it exists, otherwise of the
+    last paragraph, so a bold heading line followed by plain body lines keeps
+    that pattern.
+    """
+    tf = shape.text_frame
+    paras = list(tf.paragraphs)
+    protos = [copy.deepcopy(p._p) for p in paras]
+    body = tf._txBody
+    for p in paras:
+        body.remove(p._p)
+    for i, line in enumerate(lines):
+        el = copy.deepcopy(protos[min(i, len(protos) - 1)])
+        body.append(el)
+        from pptx.text.text import _Paragraph
+        para = _Paragraph(el, tf)
+        runs = para.runs
+        if runs:
+            runs[0].text = line
+            for r in runs[1:]:
+                r._r.getparent().remove(r._r)
+        else:
+            para.text = line
+
+
+def set_table(shape, rows: list[list[str]]) -> None:
+    """Fill a pptx table, cloning the last body row to add rows as needed."""
+    tbl = shape.table
+    tbl_el = tbl._tbl
+    trs = tbl_el.tr_lst
+    proto = copy.deepcopy(trs[-1])
+    for tr in trs[1:]:
+        tbl_el.remove(tr)
+    for _ in rows[1:]:
+        tbl_el.append(copy.deepcopy(proto))
+    for r_i, values in enumerate(rows):
+        for c_i, v in enumerate(values):
+            tf = tbl.cell(r_i, c_i).text_frame
+            p = tf.paragraphs[0]
+            if p.runs:
+                p.runs[0].text = v
+                for r in p.runs[1:]:
+                    r._r.getparent().remove(r._r)
+            else:
+                p.text = v
+            for extra in list(tf.paragraphs)[1:]:
+                extra._p.getparent().remove(extra._p)
 
 
 def apply_corrections(folder: Path) -> None:

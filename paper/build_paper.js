@@ -137,18 +137,29 @@ function resultsSection() {
     out.push(P(`The v2 run had completed ${v2?.complete_triples ?? 0} instances at the time of writing; results are reported when the run completes.`));
     return out;
   }
-  out.push(P(`${v2.complete_triples} of ${N.v2_design.rows} rows completed all three conditions (${v2.runs_failed} failed calls, chiefly provider quota and overload). Table I gives the judged outcomes.`));
+  out.push(P(`${v2.complete_triples} of ${N.v2_design.rows} rows completed all three conditions${v2.runs_failed ? ` (${v2.runs_failed} failed calls)` : ", with no failed calls once transient provider errors were retried"}, and all ${v2.judged} reviews were judged. Table I gives the outcomes. Gap recovery is shown only where the ceiling exceeds the floor; elsewhere it is undefined.`));
   const rows = [];
-  const add = (label, t) => t && rows.push([label, String(t.n), pct(t.floor), pct(t.treatment), pct(t.ceiling),
-    f2(t.gap_recovery), fp(t.mcnemar_p)]);
+  const add = (label, t, higherIsBetter = true) => t && rows.push([label, String(t.n), pct(t.floor), pct(t.treatment), pct(t.ceiling),
+    higherIsBetter && t.ceiling > t.floor ? f2(t.gap_recovery) : "n/a", fp(t.mcnemar_p)]);
   add("Intent recovered (all)", T.intent_all);
   add("Intent recovered (golden)", T.intent_golden);
   add("Intent recovered (mutant)", T.intent_mutant);
   add("Defect caught (mutant)", T.defect_mutant);
-  add("False alarm (golden)", T.false_alarm_golden);
+  add("False alarm (golden)", T.false_alarm_golden, false);
   out.push(...table(["Measure", "n", "Floor", "Treat.", "Ceil.", "Gap rec.", "p"], rows,
     [1500, 330, 520, 520, 520, 560, 520], "Table I. Judged outcomes, manipulation v2"));
-  out.push(P(`The detector asked on ${v2.treatment_asks} of ${v2.treatment_n} treatment runs (${pct(v2.treatment_ask_rate)}).`));
+  out.push(P(`The detector asked on ${v2.treatment_asks} of ${v2.treatment_n} treatment runs (${pct(v2.treatment_ask_rate)}). The simulated author gave a substantive answer to ${v2.treatment_asks - (v2.treatment_refused || 0)} of these and declined ${v2.treatment_refused || 0}, saying the notes did not cover the question. Because the treatment differs from the floor only on runs where the detector asked, at most ${v2.treatment_asks} pairs can differ for a reason other than sampling variation; the remaining ${v2.treatment_n - v2.treatment_asks} pairs are two independent samples of the same single-pass review.`));
+  const ia = T.intent_all, dm = T.defect_mutant;
+  if (ia) {
+    out.push(P(`Withholding all natural-language intent lowered intent recovery from ${pct(ia.ceiling)} to ${pct(ia.floor)}: the v2 manipulation opens a gap where v1 opened none, but a small one, because code alone still reveals the purpose of most of these patches. The treatment recovered intent in ${pct(ia.treatment)} of instances (McNemar p = ${fp(ia.mcnemar_p)}; discordant pairs: ${ia.discordant_treatment_better} favouring the treatment, ${ia.discordant_floor_better} favouring the floor).`));
+  }
+  const F = v2.funnel;
+  if (F && F.floor_misses !== undefined) {
+    out.push(P(`Tracing each instance shows where the effect is lost. The treatment can only improve on the floor for an instance the floor got wrong, that the detector flagged, and whose author answered. The floor missed intent on ${F.floor_misses} instances (the ceiling also missed ${F.ceiling_also_missed} of these). The detector asked on ${F.detector_asked} of the ${F.floor_misses}; the author answered ${F.author_answered} substantively; and the treatment recovered intent on ${F.treatment_recovered}. Where clarification was given the chance it recovered intent (${F.treatment_recovered} of ${F.author_answered}, too few to estimate a rate), but the chance arose rarely: the binding constraint is detector recall, not the value of an answer once given. Of the detector's ${F.asked_total} questions overall, ${F.asked_total - F.detector_asked} went to instances the floor already understood, where an answer cannot improve intent recovery.`));
+  }
+  if (dm) {
+    out.push(P(`Injected defects were rarely caught in any condition—${pct(dm.floor)} in the floor, ${pct(dm.treatment)} in the treatment and ${pct(dm.ceiling)} with full context. The full-context figure is the informative one: with the issue in hand the reviewer still approved most mutants, so on this model the binding limit on defect detection is the reviewer's reading of the code, not missing intent, and clarification cannot raise detection above that ceiling. One mutant was caught without the issue text but approved with it, an isolated case but consistent with a stated intent anchoring the reviewer toward acceptance.`));
+  }
   return out;
 }
 
@@ -157,6 +168,10 @@ function detectorSection() {
   const names = Object.keys(det);
   if (!names.length) { out.push(P("Detector comparison results are not yet available.")); return out; }
   out.push(P("Using constructed labels—a stripped context is ambiguous by construction and its full counterpart clear—Table II compares the detectors. A detector that keys on a missing issue gains part of its recall for free under these labels, so the figures bound real-world recall from above."));
+  const sm = det.sampling, pt = det.perturbation;
+  if (sm && pt) {
+    out.push(P(`The heuristic was run on every golden row; the two uncertainty detectors, which cost eight model calls per decision, on ${sm.n_decisions / 2} instances only, so their rows are indicative. At the default threshold both asked on every decision. Sampling dispersion did separate the conditions (mean score ${f2(sm.mean_score_stripped)} stripped against ${f2(sm.mean_score_full)} full), so a higher threshold might make it usable; perturbation did not (${f2(pt.mean_score_stripped)} against ${f2(pt.mean_score_full)}). The heuristic was the most conservative: it never asked on a full-context instance, but caught only ${pct(det.heuristic.recall)} of stripped ones, which is the recall limit traced above.`));
+  }
   out.push(...table(["Detector", "Decisions", "Ask rate", "Prec.", "Recall", "Score (stripped / full)"],
     names.map(n => [n, String(det[n].n_decisions), pct(det[n].ask_rate), f2(det[n].precision),
       f2(det[n].recall), `${f2(det[n].mean_score_stripped)} / ${f2(det[n].mean_score_full)}`]),
@@ -166,13 +181,13 @@ function detectorSection() {
 
 const discussion = [
   H("VI", "Threats to Validity"),
-  P("The sample is small. Free-tier daily quotas, applied per model, bounded the number of instances, and confidence intervals are correspondingly wide; we report every completed instance rather than a selected subset. The judge is an LLM and has not yet been validated against human scoring; we provide a stratified sample and agreement tooling for that purpose. The simulated author answers only from withheld text and its exchanges are logged, but leakage cannot be excluded without audit. Mutants are verified by execution, yet the mutation operators produce simple defects that may be easier or harder to detect than natural ones. All verified mutants come from one repository, sympy, because it could be tested in the available environment."),
+  P("The sample is small. Free-tier daily quotas, applied per model, bounded the number of instances, and confidence intervals are correspondingly wide; we report every completed instance rather than a selected subset. The judge is an LLM and has not yet been validated against human scoring; we provide a stratified sample and agreement tooling for that purpose. The simulated author answers only from withheld text and its exchanges are logged, but leakage cannot be excluded without audit. We also report a protocol deviation: in the first v2 run the simulated author's token budget was exhausted by the model's hidden reasoning, returning empty answers, and its prompt refused questions phrased in terms of code it had not seen. Both were corrected and the treatment condition re-run for the affected instances only; floor and ceiling runs were not repeated. The prompt change was made after observing refusals, and both versions are logged with every exchange. Mutants are verified by execution, yet the mutation operators produce simple defects that may be easier or harder to detect than natural ones. All verified mutants come from one repository, sympy, because it could be tested in the available environment. Every model used is a free-tier model, and the reviewer is a small one; its low defect-detection rate even with full context may not hold for stronger reviewers."),
   P("The detector comparison uses constructed labels; the classifier awaits the planned human-labelled set, and its absence means one of the four designs is not evaluated here."),
 ];
 
 const conclusion = [
   H("VII", "Conclusion"),
-  P("ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change itself. Our pilot showed that evaluating this idea on golden patches requires withholding more than the linked issue, because well-written patches document their own intent; the revised design withholds all natural-language intent and adds execution-verified defects. The system, harness, verified mutants and all results are released. Remaining work is a human-labelled set for the classifier, human validation of the judge, a paired developer study of perceived trust and usefulness, and a larger run beyond free-tier limits."),
+  P(`ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change itself. Our pilot showed that evaluating this idea on golden patches requires withholding more than the linked issue, because well-written patches document their own intent; the revised design withholds all natural-language intent and adds execution-verified defects. The system, harness, verified mutants and all results are released. On ${v2?.complete_triples ?? 0} complete instances clarification recovered ${f2(T.intent_all?.gap_recovery)} of the gap between floor and ceiling; the effect is not significant at this sample size, and the trace through detection, answering and recovery locates the limit in the detector's recall rather than in the usefulness of an answer once given. Remaining work is a human-labelled set for the classifier, human validation of the judge, a paired developer study of perceived trust and usefulness, and a larger run beyond free-tier limits.`),
 ];
 
 const refs = [
