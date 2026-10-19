@@ -285,3 +285,20 @@ def test_usage_records_the_model_that_actually_served_the_request():
     u = b.text(model="gemini-3.5-flash-lite", system="s", cached_context="c",
                instruction="i").usage
     assert u.served_model == "gemini-3.5-flash-lite-002"
+
+
+def test_schema_object_is_recovered_when_the_sdk_declines_to_parse_it():
+    """Regression: gemma-4-31b-it returned a valid object with a leading space
+    and the SDK's parser gave up, failing a treatment condition mid-run."""
+    raw = ' ```json\n{"intent_summary": "x", "findings": [], "overall_confidence": 0.5, "verdict": "approve"}\n```'
+    out = backend(FakeResponse(parsed=None, text=raw)).structured(
+        model="gemma-4-31b-it", schema=ReviewOutput, system="s", cached_context="c",
+        instruction="i", max_tokens=100, thinking=True, temperature=None)
+    assert out.value.verdict == "approve"
+
+
+def test_recovery_still_rejects_objects_that_break_the_schema():
+    with pytest.raises(ValueError):
+        backend(FakeResponse(parsed=None, text='{"verdict": "maybe"}')).structured(
+            model="gemma-4-31b-it", schema=ReviewOutput, system="s", cached_context="c",
+            instruction="i", max_tokens=100, thinking=True, temperature=None)

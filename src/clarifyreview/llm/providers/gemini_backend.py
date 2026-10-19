@@ -69,6 +69,8 @@ class GeminiBackend(Backend):
         usage = self._usage(model, response, started)
         parsed = response.parsed
         if parsed is None:
+            parsed = self._recover_json(response.text or "", schema)
+        if parsed is None:
             raise ValueError(
                 f"{model} returned no parseable output for {schema.__name__}. "
                 f"Raw text: {(response.text or '')[:300]!r}"
@@ -91,6 +93,29 @@ class GeminiBackend(Backend):
         )
         usage = self._usage(model, response, started)
         return Result(value=(response.text or "").strip(), usage=usage)
+
+    @staticmethod
+    def _recover_json(text: str, schema: type[BaseModel]):
+        """Parse a schema object the SDK declined to.
+
+        Gemma honours the requested schema but sometimes wraps the object in
+        whitespace, a code fence or a trailing remark, and the SDK's parser then
+        returns nothing. Decoding the first JSON object in the text and
+        validating it against the same schema recovers it without loosening the
+        contract: anything that does not validate is still rejected.
+        """
+        import json
+
+        from pydantic import ValidationError
+
+        start = text.find("{")
+        if start < 0:
+            return None
+        try:
+            obj, _ = json.JSONDecoder().raw_decode(text[start:])
+            return schema.model_validate(obj)
+        except (json.JSONDecodeError, ValidationError):
+            return None
 
     def list_models(self) -> list[str]:
         out = []
