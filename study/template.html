@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ClarifyReview Study</title>
+<style>
+:root{--ink:#16181D;--muted:#5C6270;--line:#D7DBE2;--bg:#F4F5F7;--card:#FFF;--acc:#1F3864}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+font:16px/1.55 Georgia,"Times New Roman",serif;padding:0 16px 80px}
+main{max-width:860px;margin:0 auto}h1{font:700 28px/1.2 Arial,sans-serif;margin:40px 0 8px}
+h2{font:700 19px Arial,sans-serif;margin:0 0 6px}.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:18px 20px;margin:18px 0}
+pre{background:#1A1D23;color:#E3E6EC;padding:12px;border-radius:5px;overflow-x:auto;font-size:12.5px;line-height:1.5}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:700px){.pair{grid-template-columns:1fr}}
+.rev{border:1px solid var(--line);border-radius:5px;padding:12px 14px}.rev h3{margin:0 0 6px;font:700 15px Arial,sans-serif;color:var(--acc)}
+.f{font-size:14px;margin:6px 0}.q{background:#FDF3E3;border-left:3px solid #A96C12;padding:8px 10px;font-size:14px;margin:8px 0}
+fieldset{border:none;padding:0;margin:10px 0}label{margin-right:12px;white-space:nowrap}
+textarea{width:100%;min-height:54px;font:inherit}button{font:600 15px Arial,sans-serif;background:var(--acc);color:#fff;border:0;border-radius:5px;padding:10px 18px;cursor:pointer}
+button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #A96C12;outline-offset:2px}
+.hidden{display:none}
+</style></head><body><main>
+<h1>Code review comparison</h1>
+<p class="muted">For each pull request you will see the issue it addressed, the code change, and two
+automated reviews labelled A and B. Rate each review. There are no right answers; we want your judgement
+as a developer. About 25&ndash;30 minutes.</p>
+
+<div class="card" id="start">
+<h2>Before you begin</h2>
+<p>By continuing you agree to take part in a student research study (BCSE497J, VIT). We record only your
+ratings, comments and years of programming experience. Nothing is sent anywhere until you download your
+responses and return the file.</p>
+<p><label>Participant code (given to you): <input id="pid" required></label></p>
+<p><label>Years of programming experience: <input id="yrs" type="number" min="0" max="50" required></label></p>
+<button id="go">Start</button>
+</div>
+
+<div id="items"></div>
+<div class="card hidden" id="done">
+<h2>Thank you</h2><p>Download your responses and send the file back to the researchers.</p>
+<button id="dl">Download responses</button>
+</div>
+
+<script>
+const ITEMS = /*ITEMS*/[];
+function fnv1a(s){let h=0x811c9dc5;for(const b of new TextEncoder().encode(s)){h^=b;h=Math.imul(h,0x01000193)>>>0}return h>>>0}
+const clarifyIsA=(p,i)=>fnv1a(p.trim().toLowerCase()+"|"+i)%2===0;
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function rev(r,label){
+  let h=`<div class="rev"><h3>Review ${label}</h3><div class="f"><b>Reads this change as:</b> ${esc(r.summary)}</div>`;
+  if(r.exchange){h+=`<div class="q"><b>Asked the author:</b> ${esc(r.exchange.questions.join(" "))}<br><b>Author replied:</b> ${esc(r.exchange.answer)}</div>`}
+  h+=`<div class="f"><b>Verdict:</b> ${esc(r.verdict)}</div>`;
+  h+= r.findings.length? r.findings.map(f=>`<div class="f">&bull; [${esc(f.sev)}/${esc(f.cat)}] ${esc(f.where)} &mdash; ${esc(f.claim)}</div>`).join("") : `<div class="f muted">No findings reported.</div>`;
+  return h+"</div>";
+}
+function scale(name){return [1,2,3,4,5].map(v=>`<label><input type="radio" name="${name}" value="${v}" required> ${v}</label>`).join("")}
+document.getElementById("go").onclick=()=>{
+  const pid=document.getElementById("pid").value, yrs=document.getElementById("yrs").value;
+  if(!pid||yrs===""){alert("Please enter your participant code and experience.");return}
+  const order=[...ITEMS].sort((a,b)=>fnv1a(pid+"#"+a.id)-fnv1a(pid+"#"+b.id));
+  document.getElementById("start").classList.add("hidden");
+  document.getElementById("items").innerHTML=order.map((it,n)=>{
+    const aIsC=clarifyIsA(pid,it.id), A=aIsC?it.clarify:it.plain, B=aIsC?it.plain:it.clarify;
+    const k=`i${n}`;
+    return `<div class="card" data-id="${esc(it.id)}"><h2>Pull request ${n+1} of ${order.length}</h2>
+    <details><summary>Issue it addressed</summary><p>${esc(it.issue)}</p></details>
+    <details><summary>Code change</summary><pre>${esc(it.diff)}</pre></details>
+    <div class="pair">${rev(A,"A")}${rev(B,"B")}</div>
+    ${["A","B"].map(L=>`<fieldset><b>Review ${L}</b> &mdash; usefulness (1&ndash;5): ${scale(k+L+"u")}<br>
+      trust (1&ndash;5): ${scale(k+L+"t")}<br>would you act on it?
+      <label><input type="radio" name="${k+L}a" value="1" required> yes</label>
+      <label><input type="radio" name="${k+L}a" value="0"> no</label>
+      <textarea name="${k+L}w" placeholder="Why? (optional)"></textarea></fieldset>`).join("")}</div>`}).join("")
+    + `<button id="finish">Finish</button>`;
+  document.getElementById("finish").onclick=()=>{
+    const rows=[["participant","years","item","label","usefulness","trust","would_act","why"]];
+    let missing=0;
+    document.querySelectorAll("[data-id]").forEach((card,n)=>{
+      for(const L of ["A","B"]){const g=s=>card.querySelector(`[name="i${n}${L}${s}"]:checked`)?.value??"";
+        const u=g("u"),t=g("t"),a=g("a"); if(!u||!t||!a)missing++;
+        rows.push([pid,yrs,card.dataset.id,L,u,t,a,(card.querySelector(`[name="i${n}${L}w"]`).value||"").replace(/\s+/g," ")])}});
+    if(missing&&!confirm(`${missing} ratings are blank. Finish anyway?`))return;
+    window.__csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(",")).join("\n");
+    document.getElementById("items").classList.add("hidden");
+    document.getElementById("done").classList.remove("hidden");
+  };
+};
+document.getElementById("dl").onclick=()=>{
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([window.__csv],{type:"text/csv"}));
+  a.download="clarifyreview_responses.csv";a.click();
+};
+</script></main></body></html>
