@@ -316,3 +316,22 @@ Google does not publish per-model free-tier limits; these were found by hitting 
 
 Every run records the model the provider says actually served it, so "one
 reviewer for every condition" is verified rather than assumed.
+
+## Regenerating the report, deck and paper
+
+Every deliverable is generated from the experiment log, so re-running the study
+and these commands keeps all of them in agreement. Needs `pip install -e '.[docs]'`;
+the PDF exports drive Microsoft Word and PowerPoint on macOS.
+
+```bash
+.venv/bin/python -m paper.collect                 # numbers.json from the study log
+.venv/bin/python docs/figures/make_figures.py     # results, funnel, detector, demo figures
+.venv/bin/python docs/build_report.py --template "<SCOPE Project I template.docx>" \
+    --out ~/Downloads/ClarifyReview_Review3/ClarifyReview_Project_I_Report.docx
+.venv/bin/python docs/build_deck.py --template "<Review 3 template.pptx>" \
+    --out ~/Downloads/ClarifyReview_Review3/ClarifyReview_Review3.pptx
+node paper/build_paper.js                         # IEEE conference paper
+```
+
+`clarifyreview replay` (and `./demo.sh`) shows a recorded study run through all
+four stages without an API key, for demonstrations.
