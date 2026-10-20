@@ -11,3 +11,4 @@ runs/
 .pytest_cache/
 .bench/
 paper/node_modules/
+src/clarifyreview.egg-info/

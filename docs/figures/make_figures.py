@@ -106,11 +106,13 @@ def fig_detectors() -> None:
         s, f = det[n]["mean_score_stripped"], det[n]["mean_score_full"]
         ax.bar(i - w / 2, s, w, color=ORANGE, label="intent withheld" if i == 0 else None)
         ax.bar(i + w / 2, f, w, color=NAVY, label="full context" if i == 0 else None)
-        ax.text(i - w / 2, s + 0.02, f"{s:.2f}", ha="center", fontsize=8.5)
-        ax.text(i + w / 2, f + 0.02, f"{f:.2f}", ha="center", fontsize=8.5)
+        box = dict(fc="white", ec="none", pad=0.6)
+        ax.text(i - w / 2, s + 0.025, f"{s:.2f}", ha="center", fontsize=8.5, bbox=box, zorder=5)
+        ax.text(i + w / 2, f + 0.025, f"{f:.2f}", ha="center", fontsize=8.5, bbox=box, zorder=5)
     thresholds = {"heuristic": 0.50, "sampling": 0.35, "perturbation": 0.35}
     for i, n in enumerate(names):
-        ax.hlines(thresholds[n], i - 0.45, i + 0.45, colors="black", linestyles="--", lw=1)
+        ax.hlines(thresholds[n], i - 0.45, i + 0.45, colors="black", linestyles="--", lw=1,
+                  zorder=3)
     ax.plot([], [], "k--", lw=1, label="default threshold")
     labels = [f"{n}\n(n={det[n]['n_decisions']}, ask rate {det[n]['ask_rate'] * 100:.0f}%)"
               for n in names]
