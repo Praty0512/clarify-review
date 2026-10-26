@@ -1,6 +1,6 @@
 """Configuration, and the model policy the whole project runs under.
 
-Two providers are supported. The one in use is chosen by CLARIFYREVIEW_PROVIDER
+Three providers are supported (Gemini, Anthropic, and local models via Ollama). The one in use is chosen by CLARIFYREVIEW_PROVIDER
 and affects nothing above `llm/` - detectors, pipeline and experiment harness all
 talk to the same wrapper, so switching provider changes no research code.
 """
@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-Provider = Literal["gemini", "anthropic"]
+Provider = Literal["gemini", "anthropic", "ollama"]
 
 # --------------------------------------------------------------- model policy
 #
@@ -55,6 +55,18 @@ MODELS: dict[str, dict[str, str]] = {
         # instability rather than a different model's.
         "sampling": "claude-haiku-4-5",
     },
+    # Local models, ~4 GB VRAM laptop. See docs/ollama.md for the rationale. Tags
+    # are explicit (never `:latest`) so a pull cannot change the model under a
+    # study; `served_model` additionally records the weights digest.
+    "ollama": {
+        "review": "qwen3:4b-instruct-2507-q4_K_M",
+        "sampling": "qwen3:4b-instruct-2507-q4_K_M",
+        # A different family from the reviewer: the judge does not score its own
+        # output, and a weaker oracle volunteers less unasked-for information.
+        "question": "llama3.2:3b",
+        "oracle": "llama3.2:3b",
+        "judge": "llama3.2:3b",
+    },
 }
 
 # Measured on a free key, 19 October 2026 (Google does not publish these):
@@ -80,6 +92,8 @@ def accepts_temperature(model: str) -> bool:
     """Gemini accepts sampling parameters everywhere; Anthropic does not."""
     if model.startswith(("gemini", "gemma")):
         return True
+    if ":" in model:  # Ollama "name:tag" ids; local models take any sampling option
+        return True
     return model in MODELS_ACCEPTING_TEMPERATURE
 
 
@@ -100,6 +114,13 @@ PRICING: dict[str, tuple[float, float]] = {
     "gemini-3.5-flash-lite": (0.00, 0.00),
     "gemini-3.1-flash-lite": (0.00, 0.00),
     "gemma-4-31b-it": (0.00, 0.00),
+    # Local models cost nothing per token.
+    "qwen3:4b": (0.00, 0.00),
+    "qwen3:4b-instruct-2507-q4_K_M": (0.00, 0.00),
+    "llama3.2:3b": (0.00, 0.00),
+    "gemma3:4b": (0.00, 0.00),
+    "qwen2.5-coder:3b": (0.00, 0.00),
+    "qwen2.5-coder:7b": (0.00, 0.00),
 }
 CACHE_READ_MULTIPLIER = 0.1
 CACHE_WRITE_MULTIPLIER = 1.25
@@ -140,6 +161,15 @@ class Settings(BaseSettings):
     google_api_key: str | None = None  # the SDK's own conventional name
     anthropic_api_key: str | None = None
 
+    # Local Ollama server. The key is only for a proxy that demands one.
+    ollama_host: str = "http://127.0.0.1:11434"
+    ollama_num_ctx_max: int = 16384
+    ollama_num_predict_max: int = 4096
+    ollama_think: Literal["off", "on", "auto"] = "off"
+    ollama_keep_alive: str = "10m"
+    ollama_timeout_s: float = 600
+    ollama_api_key: str | None = None
+
     github_token: str | None = None
     github_webhook_secret: str | None = None
 
@@ -168,6 +198,10 @@ class Settings(BaseSettings):
     def api_key(self) -> str | None:
         if self.provider == "gemini":
             return self.gemini_api_key or self.google_api_key
+        if self.provider == "ollama":
+            # A local server needs no key; a placeholder keeps callers that
+            # require a non-empty key (cli.py) working unchanged.
+            return self.ollama_api_key or "ollama"
         return self.anthropic_api_key
 
     def model_for(self, role: str) -> str:

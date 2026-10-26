@@ -13,7 +13,7 @@ Guide: Prof. Arivoli A.
 
 | | |
 |---|---|
-| **Built and tested** | All four pipeline stages · four detector designs · Gemini and Anthropic backends · GitHub bot · experiment log · full Study A harness · verified-mutant pipeline · Study B page · labelling, judge-agreement and oracle-audit tooling · uncertainty-threshold sweep · paper generator · 130 offline tests |
+| **Built and tested** | All four pipeline stages · four detector designs · Gemini and Anthropic backends · GitHub bot · experiment log · full Study A harness · verified-mutant pipeline · Study B page · labelling, judge-agreement and oracle-audit tooling · uncertainty-threshold sweep · paper generator · 166 offline tests |
 | **Run** | Pilot (v1 manipulation, Sept 2026) · v2 ablation on SWE-bench Verified with execution-verified mutants · detector comparison |
 | **Needs people** | The 300-PR labelling pass (two annotators) · human validation of the LLM judge · the Study B developer sessions |
 
@@ -26,6 +26,13 @@ databases; nothing is typed in by hand.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'
+```
+
+On Windows (PowerShell), any Python 3.11 or newer works:
+
+```powershell
+py -3.11 -m venv .venv
+.venv\Scripts\pip install -e ".[dev]"
 ```
 
 Get a free Gemini key at <https://aistudio.google.com/apikey>, then:
@@ -99,11 +106,34 @@ useless as one that never asks.
 clarifyreview ingest  --repo owner/name --pr 42     # stage 1: the assembled context
 clarifyreview detect  --repo owner/name --pr 42     # stage 2: ask or proceed
 clarifyreview review  --repo owner/name --pr 42     # all four stages
-clarifyreview serve                                  # the webhook receiver
+clarifyreview serve                                  # the webhook receiver (the live bot)
+clarifyreview sweep                                  # finish parked runs past their deadline
 ```
 
 Every command also accepts `--diff <file>` in place of `--repo/--pr`, so the whole
 pipeline runs against a local diff with no GitHub access.
+
+### The live GitHub bot
+
+`clarifyreview serve` is a webhook receiver that reviews pull requests on a real
+repository. When the detector says the intent is unclear it posts one question,
+**parks** the run in SQLite (`parked_runs`, so a restart loses nothing) and posts the
+review when the PR author replies - or, after `CLARIFYREVIEW_CLARIFY_TIMEOUT`, with
+an explicit "no answer" note. It dedupes redelivered webhooks, skips drafts and
+already-reviewed commits, never asks a bot, never counts its own comments as an
+answer, follows pagination and rate limits, and reports failures on the PR once per
+commit. Production runs are logged as `condition = github_live`, never as a Study A
+condition.
+
+Setup (token or GitHub App, webhook, tunnel, smoke test, configuration reference):
+[docs/github_bot_runbook.md](docs/github_bot_runbook.md).
+
+### Other guides
+
+- [docs/ollama.md](docs/ollama.md) - running the pipeline on local models through
+  Ollama (`CLARIFYREVIEW_PROVIDER=ollama`).
+- [docs/real_pr_labelling.md](docs/real_pr_labelling.md) - building a labelling
+  sheet from real merged pull requests and training the classifier on it.
 
 ---
 
@@ -237,7 +267,7 @@ src/clarifyreview/
   store/          the experiment log (plain sqlite3 — the schema is the method)
   gh/             REST client, webhook receiver
 experiments/      dataset, mutation, stripping, oracle, runner, judge, statistics
-tests/            101 tests, no API key required
+tests/            166 tests, no API key required
 ```
 
 ## Tests
@@ -246,7 +276,9 @@ tests/            101 tests, no API key required
 .venv/bin/python -m pytest -q
 ```
 
-All 101 run offline against stub SDK clients — no key, no network. The ones worth reading first are
+On Windows, use `.venv\Scripts\python -m pytest -q`.
+
+All 166 run offline against stub SDK clients — no key, no network. The ones worth reading first are
 `test_pipeline.py` (the conditions differ in exactly one thing),
 `test_experiments.py` (stripping preserves the diff; mutants are valid diffs;
 McNemar and gap recovery behave), and `test_llm_policy.py` (the temperature rule
@@ -284,23 +316,91 @@ python -m paper.collect && node paper/build_paper.js
 
 ### Steps that need people
 
+These steps wait on human input, so they cannot run unattended. On Windows, replace
+`python` with `.venv\Scripts\python` in every command below.
+
+**Labelling: two annotators, independently.** Each annotator works in their own file,
+because annotators must not see each other's labels; shared labels inflate kappa.
+
 ```bash
-# Label 300 PRs (both of you, independently), then compute kappa and train detector (b)
-python -m experiments.label_tool sheet --n 300
+# Already done: split the sheet into one file per annotator, plus codebook.txt
+python -m experiments.label_tool split runs/labelling_sheet.csv --out-dir runs/labelling
+# Writes annotator_1.csv and annotator_2.csv
+
+# Make annotator_N.html, a keyboard-driven labeller (0/1 keys, autosaves in the browser)
+python -m experiments.label_tool page --out-dir runs/labelling
+```
+
+Each annotator labels in the HTML page, which downloads `annotator_N_labels.csv`, or
+straight in the CSV. Either works; Excel BOM and cp1252 files are accepted.
+
+Disagreements are settled in the `adjudicated` column of `runs/labelling_sheet.csv`.
+`runs/labelling_suggestions.csv` (from `python -m experiments.prelabel`) holds heuristic
+suggestions with evidence. Open it only after both annotators finish, and only for
+disagreement rows, and record your own call first. The heuristic is weak: three rules
+fire on every row in the code-only view. The paper discloses how many labels were
+adjudicated with it, because its thresholds are later tuned on these same labels.
+
+Training labels use the prose-stripped diff the annotators actually read, so the
+default works offline:
+
+```bash
 python -m experiments.label_tool agree runs/labelling_sheet.csv \
     --a annotator_1 --b annotator_2 --to-jsonl data/labelled_prs.jsonl
-python -m experiments.train_classifier --labels data/labelled_prs.jsonl --sweep-thresholds
-
-# Validate the judge against your own scoring
-python -m experiments.judge --db data/study_v2.db --sample-for-humans 60
-python -m experiments.label_tool agree runs/judge_validation_sample.csv \
-    --a human_intent_recovered --b judge_intent_recovered
-
-# Study B: build the page, send it out, merge what comes back, analyse
-python -m study.build_study --db data/study_v2.db --n 16
-python -m study.merge_responses responses/*.csv --out runs/study_b.csv
-python -m experiments.analyze --study-b runs/study_b.csv
+# --diff-source sheet is the default; --diff-source swebench reproduces the old
+# behaviour and needs: pip install -e .[bench]
 ```
+
+**Judge validation.** Hand out only the blind copies. They hide the judge's scores and
+the condition, and order rows differently for each scorer, so neither scorer can
+anchor on the other or on the judge.
+
+```bash
+python -m experiments.judge --db data/study_v2.db --blind-copies yashika pratyaksh
+# Gives runs/judge_validation/yashika.csv and runs/judge_validation/pratyaksh.csv
+```
+
+Never hand out `runs/judge_validation_sample.csv`. It is the reference copy with the
+judge's answers. See `runs/judge_validation/INSTRUCTIONS.txt`. Once both are scored:
+
+```bash
+python -m experiments.analyze --judge-agreement runs/judge_validation/*.csv \
+    --out runs/judge_agreement.json
+```
+
+**Study B.** Assign participant codes P01 to P16 in `study/participants.csv`:
+
+```bash
+python -m study.assign --codes 16
+```
+
+Send `study/study.html`. Each participant enters their code; the page autosaves and
+downloads `clarifyreview_responses_<code>.csv`. Put the returned files in
+`study/responses/`. `sympy__sympy-12481` and `sympy__sympy-11618` each appear twice, once
+as the golden patch and once as the mutant. Both rows are correct; do not dedupe them.
+
+**Finish.** Rather than running each step by hand, use one command. It writes nothing
+in `--status` mode, so it is safe to run at any time to see what is blocked and on whom:
+
+```bash
+python -m experiments.finish --status
+python -m experiments.finish
+```
+
+`finish` runs every step whose human inputs are complete: combine, agreement and
+`labelled_prs.jsonl`, classifier training with frozen thresholds, judge agreement, Study
+B merge and report, then `paper/collect.py` and the paper build. It never fills in
+missing human data, so re-running it after more labels arrive is safe.
+
+```bash
+python -m experiments.finish --allow-partial        # interim kappa only
+python -m experiments.finish --min-participants 6   # default 6; warns below 12
+python -m experiments.finish --paper auto           # auto | always | never
+```
+
+The paper build needs `cd paper && npm install`, once. Note that once thresholds are
+frozen, Study A still ran on the default thresholds. Re-running the ablation with the
+frozen thresholds is an API step that `finish` does not perform.
 
 ### Free-tier limits (measured 19 October 2026)
 
@@ -321,7 +421,7 @@ reviewer for every condition" is verified rather than assumed.
 
 Every deliverable is generated from the experiment log, so re-running the study
 and these commands keeps all of them in agreement. Needs `pip install -e '.[docs]'`;
-the PDF exports drive Microsoft Word and PowerPoint on macOS.
+on macOS the PDF exports drive Microsoft Word and PowerPoint; on Windows they use Word/PowerPoint through pywin32, or LibreOffice if Office is not installed. If neither is available the PDF step is skipped and the .docx/.pptx are still written.
 
 ```bash
 .venv/bin/python -m paper.collect                 # numbers.json from the study log

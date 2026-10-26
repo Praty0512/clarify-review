@@ -44,6 +44,35 @@ def usable_after_stripping(row: dict) -> bool:
     return is_properly_stripped(stripped, level="prose") and _same_code(full.diff, stripped.diff)
 
 
+def load_swebench_rows(dataset_file: str = "") -> dict[str, dict]:
+    """SWE-bench Verified keyed by instance_id; from a local JSONL when given."""
+    if dataset_file:
+        lines = Path(dataset_file).read_text(encoding="utf-8").splitlines()
+        return {r["instance_id"]: r for r in (json.loads(l) for l in lines if l.strip())}
+    from datasets import load_dataset
+    return {r["instance_id"]: dict(r)
+            for r in load_dataset("princeton-nlp/SWE-bench_Verified", split="test")}
+
+
+def merge_superset(new_rows: list[dict], base_path: str) -> list[dict]:
+    """Return base rows verbatim, then rows of `new_rows` not already in base.
+
+    Raises ValueError if a base row was regenerated differently, because then
+    old results could not be reused for it.
+    """
+    lines = Path(base_path).read_text(encoding="utf-8").splitlines()
+    base = [json.loads(l) for l in lines if l.strip()]
+    fresh = {r["pr_id"]: r for r in new_rows}
+    for b in base:
+        got = fresh.get(b["pr_id"])
+        if got is None:
+            raise ValueError(f"not a superset: {b['pr_id']} missing from the new set")
+        if json.dumps(got, sort_keys=True) != json.dumps(b, sort_keys=True):
+            raise ValueError(f"not a superset: {b['pr_id']} differs from {base_path}")
+    seen = {b["pr_id"] for b in base}
+    return base + [r for r in new_rows if r["pr_id"] not in seen]
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--golden", type=int, default=12, help="golden-arm instances")
@@ -52,12 +81,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--exclude", default="data/archive/instances.pilot.jsonl")
     ap.add_argument("--out", default="data/instances.v2.jsonl")
     ap.add_argument("--seed", type=int, default=20261019)
+    ap.add_argument("--dataset-file", default="",
+                    help="local JSONL export of SWE-bench Verified (instance_id, repo, patch, "
+                         "problem_statement, base_commit, difficulty); skips `datasets`/network")
+    ap.add_argument("--superset-of", default="",
+                    help="existing instance file whose rows must reappear byte-identical; "
+                         "they are kept first, in order, so a --resume run reuses their results")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
-    from datasets import load_dataset
-    rows = {r["instance_id"]: dict(r)
-            for r in load_dataset("princeton-nlp/SWE-bench_Verified", split="test")}
+    rows = load_swebench_rows(args.dataset_file)
 
     excluded = set()
     if Path(args.exclude).exists():

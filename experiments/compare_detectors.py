@@ -14,6 +14,11 @@ review model's daily quota; the report records which model was used.
     python -m experiments.compare_detectors --instances data/instances.v2.jsonl \\
         --detectors heuristic sampling perturbation --limit 6 \\
         --model gemini-3.1-flash-lite
+
+Fully local, no quota (needs `ollama pull qwen3:4b`; see docs/ollama.md). Local
+results are a separate study and must not be pooled with Gemini results:
+
+    CLARIFYREVIEW_PROVIDER=ollama python -m experiments.compare_detectors         --instances data/instances.v2.jsonl --detectors heuristic sampling         --limit 6 --model qwen3:4b
 """
 
 from __future__ import annotations
