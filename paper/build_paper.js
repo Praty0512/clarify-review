@@ -305,11 +305,23 @@ const joinList = xs => xs.length <= 2 ? xs.join(" and ") : xs.slice(0, -1).join(
 
 function judgeSentence() {
   if (!HJ) return null;
-  const names = { intent_recovered: "intent recovered", defect_caught: "defect caught", false_alarm: "false alarm" };
-  const parts = Object.keys(names).filter(m => HJ.metrics?.[m]).map(m =>
-    `${f2(HJ.metrics[m].kappa_mean)} for ${names[m]} (n = ${HJ.metrics[m].n})`);
-  if (!parts.length) return null;
-  return `The judge was validated against ${HJ.n_scorers} independent human scorer${HJ.n_scorers === 1 ? "" : "s"} on a stratified sample of its own reviews, shown without the judge's answers or the condition; Cohen's κ ${cite("cohen")} between human and judge was ${parts.join(", ")}. Blank cells were excluded, not counted as disagreement.`;
+  const M = HJ.metrics || {};
+  const I = M.intent_recovered, Dc = M.defect_caught, Fa = M.false_alarm;
+  if (!I && !Dc && !Fa) return null;
+  const who = `${HJ.n_scorers} independent human scorer${HJ.n_scorers === 1 ? "" : "s"}`;
+  let txt = `The judge was validated against ${who} on a stratified sample of ${(I || Dc || Fa).n} of its own reviews, shown without the judge's answers or the condition; blank cells were excluded, not counted as disagreement.`;
+  if (Dc && Fa) {
+    txt += ` On defects and false alarms it agreed with them almost perfectly (Cohen's κ ${cite("cohen")} ${f2(Dc.kappa_mean)} and ${f2(Fa.kappa_mean)}; ${pct(Dc.percent_agreement_mean)} and ${pct(Fa.percent_agreement_mean)} agreement).`;
+  }
+  if (I) {
+    txt += ` On intent recovery it agreed on ${pct(I.percent_agreement_mean)} of reviews, but κ was ${f2(I.kappa_mean)}`;
+    if (I.human_yes_rate !== undefined && I.judge_yes_rate < I.human_yes_rate) {
+      txt += `: the humans judged intent recovered in ${pct(I.human_yes_rate)} of reviews and the judge in ${pct(I.judge_yes_rate)}, so the near-zero κ reflects one dominant answer rather than random agreement. The judge is the stricter of the two, so the intent recovery rates reported here are conservative rather than inflated.`;
+    } else {
+      txt += ".";
+    }
+  }
+  return txt;
 }
 
 function humanParas() {

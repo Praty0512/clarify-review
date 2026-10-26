@@ -34,6 +34,8 @@ DET = N["detectors"]
 MUT = N["mutants"]
 # Second-model replication (v3) and judge calibration. Never pooled with V2.
 V3, V2A, J = N["v3_local"], N["v2_agent_judge"], N["judges"]
+G3 = N.get("v3_gemini") or {"available": False}
+HUM = N.get("human") or {}
 S3, D3, RP, DV = N["v3_setup"], N["v3_design"], N["realpr"], N["derived"]
 
 TITLE = ("CLARIFYREVIEW: AMBIGUITY-AWARE INTENT CLARIFICATION FOR LLM-BASED "
@@ -239,6 +241,124 @@ LITERATURE = [
 
 # ------------------------------------------------------------------ chapters
 
+
+def _frac(rate, n):
+    return f"{round(rate * n)}/{n}"
+
+
+def gemini_v3_blocks() -> list:
+    """Section 7.10: the full v3 set on the original reviewer, from numbers.json."""
+    if not G3.get("available") or not G3.get("tests", {}).get("intent_all"):
+        return []
+    t = G3["tests"]
+    ia, dm, fa = t["intent_all"], t.get("defect_mutant"), t.get("false_alarm_golden")
+    f = G3.get("funnel") or {}
+    n = ia["n"]
+    sig = "significant" if ia["mcnemar_p"] < 0.05 else "not statistically significant"
+    rows = [["Intent recovered, all", _frac(ia["floor"], n), _frac(ia["treatment"], n),
+             _frac(ia["ceiling"], n), f"{ia['mcnemar_p']:.2f}"]]
+    for key, label in (("intent_golden", "Intent recovered, golden"),
+                       ("intent_mutant", "Intent recovered, mutant"),
+                       ("defect_mutant", "Defect caught, mutants"),
+                       ("false_alarm_golden", "False alarm, golden")):
+        if t.get(key):
+            x = t[key]
+            rows.append([f"{label} (n = {x['n']})", _frac(x["floor"], x["n"]),
+                         _frac(x["treatment"], x["n"]), _frac(x["ceiling"], x["n"]),
+                         f"{x['mcnemar_p']:.2f}"])
+    out = [
+        ("h2", "7.10 The Full v3 Set on the Original Reviewer"),
+        ("p", f"The replication in Section 7.8 changed two things at once: the rows and the "
+              f"reviewer. To separate them, the full v3 set of {D3['rows']} rows, which includes "
+              f"every verified mutant, was also run on the original reviewer "
+              f"({', '.join(G3.get('review_models') or ['the v2 reviewer'])}) with the same "
+              f"question, oracle and judge models as the original study and the default detector "
+              f"threshold. {G3['complete_triples']} of {D3['rows']} rows completed all three "
+              f"conditions; the remaining {D3['rows'] - G3['complete_triples']} could not, because "
+              f"the question model returned a server error on every attempt for them. "
+              f"{G3['judged']} reviews were judged."),
+        ("table", "Table 7.6 Judged outcomes of the full v3 set on the original reviewer",
+         ["Measure", "Floor", "Treatment", "Ceiling", "McNemar p"], rows,
+         [2.4, 0.95, 1.0, 0.95, 1.0]),
+        ("p", f"Intent recovery was {pct(ia['floor'])} with intent withheld, {pct(ia['treatment'])} "
+              f"with clarification and {pct(ia['ceiling'])} with full context: gap recovery "
+              f"{ia['gap_recovery']:.2f}, 95% interval {ia['gap_ci'][0]:.2f} to "
+              f"{ia['gap_ci'][1]:.2f}, McNemar p = {ia['mcnemar_p']:.2f}, {sig}. "
+              f"{ia['discordant_treatment_better']} pairs favoured the treatment and "
+              f"{ia['discordant_floor_better']} the floor."
+              + (f" The floor missed intent on {f['floor_misses']} instances; the detector asked "
+                 f"on {f['detector_asked']} of them, the author answered {f['author_answered']}, and "
+                 f"the treatment recovered {f['treatment_recovered']}. Of the detector's "
+                 f"{f['asked_total']} questions, {f['asked_total'] - f['detector_asked']} went to "
+                 f"instances the floor already understood." if f else "")),
+    ]
+    if dm:
+        out.append(("p", f"On the {dm['n']} verified mutants the reviewer caught "
+                         f"{_frac(dm['floor'], dm['n'])} defects with intent withheld, "
+                         f"{_frac(dm['treatment'], dm['n'])} with clarification and "
+                         f"{_frac(dm['ceiling'], dm['n'])} with full context."))
+    return out
+
+
+def human_blocks() -> list:
+    """Section 7.11: the two human steps, from their own result files."""
+    hl, ht, hj = (HUM.get("labelling") or {}), (HUM.get("thresholds") or {}), \
+        (HUM.get("judge_validation") or {})
+    if not (hl.get("available") or hj.get("available")):
+        return []
+    # Tables are numbered in order, so this one follows Section 7.10's when that exists.
+    tab = "Table 7.7" if gemini_v3_blocks() else "Table 7.6"
+    out = [("h2", "7.11 Human Labelling and Judge Validation")]
+    if hl.get("available"):
+        txt = (f"Two annotators independently labelled all {hl['n']} code-only pull requests of "
+               f"the classifier's training set as clear or unclear, following the codebook. They "
+               f"agreed on {hl['n'] - hl['n_disagree']} ({pct(hl['observed_agreement'])}); Cohen's "
+               f"kappa was {hl['kappa']:.2f} ({hl['reading']}), low despite the high agreement "
+               f"because almost every pull request was labelled clear. ")
+        if hl.get("n_adjudicated_by_ai"):
+            txt += (f"The {hl['n_disagree']} disagreements were adjudicated by an AI model "
+                    f"({hl['adjudicated_by']}) applying the same codebook, at the team's request, so "
+                    f"those {hl['n_adjudicated_by_ai']} labels are not human judgements. ")
+        if ht.get("available"):
+            v = ht.get("values") or {}
+            dev = ht.get("dev") or {}
+            txt += (f"The labelled set has {ht.get('n_ambiguous', '?')} unclear examples out of "
+                    f"{ht.get('n_labels', '?')}; the development split used to freeze thresholds "
+                    f"holds {dev.get('n_ambiguous', '?')} of its {dev.get('n', '?')} rows. "
+                    f"Thresholds frozen on it are {v.get('heuristic', 0):.2f} for "
+                    f"the heuristic and {v.get('classifier', 0):.2f} for the classifier. With so "
+                    f"few unclear examples the classifier is degenerate: it scores the ambiguous "
+                    f"demonstration change at 0.00. The frozen heuristic threshold, being higher "
+                    f"than the default, would make the detector ask less often, against the recall "
+                    f"limit found in Section 7.3 and Section 7.10, so the ablations keep the default.")
+        out.append(("p", txt))
+    if hj.get("available"):
+        m = hj["metrics"]
+        rows = []
+        for key, label in (("intent_recovered", "Intent recovered"),
+                           ("defect_caught", "Defect caught"), ("false_alarm", "False alarm")):
+            if key in m:
+                x = m[key]
+                rows.append([label, str(x["n"]), pct(x["percent_agreement_mean"]),
+                             f"{x['kappa_mean']:.2f}", pct(x.get("human_yes_rate", 0)),
+                             pct(x.get("judge_yes_rate", 0))])
+        out.append(("p", f"The original study's judge was checked against {hj['n_scorers']} human "
+                         f"scorers, each scoring a stratified sample of {m['intent_recovered']['n']} "
+                         "of its reviews independently, without seeing the condition or the "
+                         f"judge's answers ({tab})."))
+        out.append(("table", f"{tab} Agreement between the judge and the human scorers",
+                    ["Measure", "n", "Agreement", "Kappa", "Humans said yes", "Judge said yes"],
+                    rows, [1.6, 0.5, 0.9, 0.7, 1.2, 1.1]))
+        ir = m.get("intent_recovered") or {}
+        out.append(("p", "On defects and false alarms the judge agrees with the humans almost "
+                         "perfectly. On intent recovery it agrees on "
+                         f"{pct(ir.get('percent_agreement_mean', 0))} of reviews, but kappa is near "
+                         "zero: the humans judged intent recovered in "
+                         f"{pct(ir.get('human_yes_rate', 0))} of reviews and the judge in "
+                         f"{pct(ir.get('judge_yes_rate', 0))}, so the judge is the stricter of the "
+                         "two and the intent recovery rates in this chapter are conservative."))
+    return out
+
 def chapters() -> list[tuple[str, list]]:
     ia, dm, fa = IA, DM, FA
     det = DET
@@ -337,7 +457,7 @@ def chapters() -> list[tuple[str, list]]:
               "human preference about as often as humans agree with each other, but show known "
               "biases, including a preference for their own output [10]; this is why the judge "
               "here is a different model family from the reviewer; it has been cross-checked "
-              "against other AI judges but not yet against human scorers."),
+              "against other AI judges and against two human scorers (Section 7.11)."),
         ("h2", "2.2 Research Gap"),
         ("p", "LLM-based pull request review is studied extensively in industry and "
               "clarification-seeking is studied extensively in academia, but the intersection is "
@@ -362,8 +482,9 @@ def chapters() -> list[tuple[str, list]]:
          ["No.", "Objective", "Status"],
          [["O1", "Design an ambiguity-detection mechanism for pull request review and compare "
                  "designs: heuristic, trained classifier, sampling and perturbation uncertainty",
-           "Partly done. Four detectors built and three compared (Section 7.5); the "
-           "classifier is not yet trained"],
+           "Done. Four detectors built and three compared (Section 7.5); the classifier is "
+           "trained on 300 human-labelled PRs but, with almost no unclear examples, is "
+           "degenerate (Section 7.11)"],
           ["O2", "Build a four-stage clarify-then-review pipeline deployable as a GitHub bot",
            "Done. Pipeline, bot and CLI implemented and tested"],
           ["O3", "Construct an evaluation set from SWE-bench Verified with execution-verified "
@@ -1038,13 +1159,19 @@ def chapters() -> list[tuple[str, list]]:
         ("fig", "fig17_judge_robustness.png",
          "Figure 7.7 Gap recovery under each judge, with 95% intervals", 5.6),
         ("p", prose("report.s7_9.robust")),
-        ("h2", "7.10 Threats to Validity"),
+        *gemini_v3_blocks(),
+        *human_blocks(),
+        ("h2", "7.12 Threats to Validity"),
         ("bullets", [
             f"Sample size: {V2['complete_triples']} instances in v2 and {V3['complete_triples']} "
             "in v3; intervals are wide and neither intent result is significant.",
-            "Judge: not validated against human scoring; cross-checked against two other AI "
-            "judges (Section 7.9). The stratified sample and agreement tooling for human "
-            "scoring are in place.",
+            "Judge: checked against two human scorers on 60 of its reviews (Section 7.11). It "
+            "agrees almost perfectly on defects and false alarms; on intent it is stricter than "
+            "the humans, so intent recovery rates are conservative. The replication's judges are "
+            "cross-checked only against other AI judges (Section 7.9).",
+            "Labels: only 4 of 300 code-only PRs were labelled unclear, and the 7 annotator "
+            "disagreements were adjudicated by an AI model at the team's request, so the "
+            "classifier and the frozen thresholds rest on very few positive examples.",
             "Simulated author: answers come from withheld text only, but leakage needs the hand "
             "audit the tooling prepares; the prompt deviation is reported.",
             "Mutants: all verified mutants come from sympy and the operators produce simple "
@@ -1078,16 +1205,16 @@ def chapters() -> list[tuple[str, list]]:
         ("p", prose("report.conclusion.v3")),
         ("h2", "8.1 Future Work"),
         ("bullets", [
-            "Raise detector recall: train the classifier on the 300-PR labelled set and freeze "
-            "the sampling detector's threshold on a development split, then repeat the ablation.",
-            "Validate the judge against two human scorers (AI-vs-AI calibration is done) and "
-            "complete the oracle leakage audit.",
+            "Raise detector recall: label more pull requests that are genuinely unclear, so the "
+            "classifier has positive examples to learn from, and freeze the sampling detector's "
+            "threshold on a development split; then repeat the ablation with frozen thresholds.",
+            "Check the replication's judges against human scorers, as was done for the original "
+            "judge, and complete the oracle leakage audit.",
             f"Label the {RP['n_prs']} collected real pull requests ({RP['n_repos']} repositories, "
             f"{numword(len(RP['languages']))} languages); none has been labelled yet.",
             "Run the paired blind developer study of perceived usefulness and trust.",
             "Deploy the bot against live GitHub; it has so far been exercised end to end only "
             "on a local server.",
-            f"Run the Gemini reviewer on the {D3['n_new_rows']} rows that only the v3 set contains.",
             "Repeat the study at a larger scale and with a stronger reviewer model on a paid key.",
             "Extend mutant verification beyond sympy and to more realistic defect types.",
         ]),

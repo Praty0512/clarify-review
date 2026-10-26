@@ -170,6 +170,37 @@ def _load_json(path: Path):
 _JUDGE_METRICS = ("intent_recovered", "defect_caught", "false_alarm")
 
 
+def _judge_yes_rates(root: Path) -> dict:
+    """Share of the validation sample each side marked 1, per metric.
+
+    Joins every blind human copy to the reference sample (which holds the judge's
+    answers) on run_id; only rows a human actually scored count.
+    """
+    import csv
+
+    ref_path = root / "runs/judge_validation_sample.csv"
+    files = sorted((root / "runs/judge_validation").glob("*.csv"))
+    if not ref_path.exists() or not files:
+        return {}
+    with ref_path.open(encoding="utf-8-sig", newline="") as fh:
+        ref = {r["run_id"]: r for r in csv.DictReader(fh)}
+    out: dict = {}
+    for m in _JUDGE_METRICS:
+        human, judge = [], []
+        for f in files:
+            with f.open(encoding="utf-8-sig", newline="") as fh:
+                for r in csv.DictReader(fh):
+                    h = (r.get(f"human_{m}") or "").strip()
+                    j = (ref.get(r.get("run_id"), {}).get(f"judge_{m}") or "").strip()
+                    if h in ("0", "1") and j in ("0", "1"):
+                        human.append(int(h))
+                        judge.append(int(j))
+        if human:
+            out[m] = {"human_yes_rate": sum(human) / len(human),
+                      "judge_yes_rate": sum(judge) / len(judge), "n_pairs": len(human)}
+    return out
+
+
 def human_results(root: Path = ROOT) -> dict:
     """What the human steps produced, read only from their own result files.
 
@@ -211,7 +242,8 @@ def human_results(root: Path = ROOT) -> dict:
                              "values": sweep.get("thresholds") or frozen,
                              "dev_sweep": sweep.get("dev_sweep"),
                              "n_labels": sweep.get("n_labels"),
-                             "n_ambiguous": sweep.get("n_ambiguous")}
+                             "n_ambiguous": sweep.get("n_ambiguous"),
+                             "train": sweep.get("train"), "dev": sweep.get("dev")}
     else:
         out["thresholds"] = {"available": False}
 
@@ -228,6 +260,16 @@ def human_results(root: Path = ROOT) -> dict:
                               "n_per_scorer": [d["n"] for d in per],
                               "kappas": ks,
                               "kappa_mean": (sum(ks) / len(ks)) if ks else None}
+        # Mean percent agreement per metric, and how often humans and the judge said
+        # "yes" on the same rows: kappa alone misleads when one answer dominates.
+        for m in metrics:
+            pa = [v.get(m, {}).get("percent_agreement") for v in ja["human_vs_judge"].values()]
+            pa = [x for x in pa if x is not None]
+            metrics[m]["percent_agreement_mean"] = sum(pa) / len(pa) if pa else None
+        rates = _judge_yes_rates(root)
+        for m, r in rates.items():
+            if m in metrics:
+                metrics[m].update(r)
         out["judge_validation"] = {
             "available": bool(metrics), "scorers": ja.get("scorers", []),
             "n_scorers": len(ja.get("scorers", [])), "metrics": metrics,
