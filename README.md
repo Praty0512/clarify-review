@@ -13,7 +13,7 @@ Guide: Prof. Arivoli A.
 
 | | |
 |---|---|
-| **Built and tested** | All four pipeline stages · four detector designs · Gemini and Anthropic backends · GitHub bot · experiment log · full Study A harness · verified-mutant pipeline · Study B page · labelling, judge-agreement and oracle-audit tooling · uncertainty-threshold sweep · paper generator · 166 offline tests |
+| **Built and tested** | All four pipeline stages · four detector designs · Gemini and Anthropic backends · GitHub bot · experiment log · full Study A harness · verified-mutant pipeline · Study B page · labelling, judge-agreement and oracle-audit tooling · uncertainty-threshold sweep · paper generator · 445 offline tests |
 | **Run** | Pilot (v1 manipulation, Sept 2026) · v2 ablation on SWE-bench Verified with execution-verified mutants · detector comparison |
 | **Needs people** | The 300-PR labelling pass (two annotators) · human validation of the LLM judge · the Study B developer sessions |
 
