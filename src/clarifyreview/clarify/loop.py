@@ -39,7 +39,7 @@ class GitHubResponder:
     """Production. Posts the question, then polls the PR thread for a reply.
 
     Polling rather than resuming from the webhook keeps this callable
-    synchronously from the CLI. The webhook path in `gh/events.py` handles the
+    synchronously from the CLI. The webhook path in `gh/app.py` handles the
     long-lived case, where a run is parked and revived by an `issue_comment`
     event days later.
     """

@@ -379,10 +379,10 @@
       "mean_ms": 31152.4
     }
   },
-  "tests_passing": "131 passed in 2.16s",
+  "tests_passing": "139 passed in 2.92s",
   "loc": {
-    "src": 4129,
+    "src": 4223,
     "experiments": 2951,
-    "tests": 1539
+    "tests": 1785
   }
 }

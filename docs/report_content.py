@@ -218,6 +218,35 @@ LITERATURE = [
 
 # ------------------------------------------------------------------ chapters
 
+TEST_PURPOSE = {
+    "test_diff.py": "Unified diff parsing and hunk arithmetic",
+    "test_semantic.py": "Line-to-symbol resolution and signature changes",
+    "test_types.py": "Context fingerprint determinism and schema limits",
+    "test_features.py": "Feature extraction from diffs",
+    "test_heuristic.py": "Ask on ambiguous, proceed on clear changes",
+    "test_uncertainty.py": "Dispersion and entropy scoring",
+    "test_pipeline.py": "Baseline equivalence, timeout fallback, fault isolation",
+    "test_llm_policy.py": "Model roles, provider rules, independent judge",
+    "test_providers.py": "Gemini/Anthropic backends, retries, quota, timeouts",
+    "test_store.py": "Experiment log round-trip and cascades",
+    "test_experiments.py": "Stripping, mutation, statistics, oracle isolation",
+    "test_tooling.py": "Judge agreement, oracle audit, sweeps, replay",
+    "test_github_bot.py": "Webhook auth, park and resume, timeout, ignoring the bot's own comments",
+}
+
+
+def test_counts() -> list[tuple[str, int]]:
+    """Tests per file as pytest collects them, parametrised cases included,
+    so the table always sums to the suite total quoted in the text."""
+    import subprocess
+    from collections import Counter
+
+    out = subprocess.run([str(ROOT / ".venv/bin/python"), "-m", "pytest", "--collect-only", "-q"],
+                         cwd=ROOT, capture_output=True, text=True).stdout
+    counts = Counter(line.split("::")[0].split("/")[-1] for line in out.splitlines() if "::" in line)
+    return sorted(counts.items())
+
+
 
 def chapters() -> list[tuple[str, list]]:
     ia, dm, fa = IA, DM, FA
@@ -603,20 +632,7 @@ def chapters() -> list[tuple[str, list]]:
         ["Reporting", "paper/collect.py, build_paper.js, docs/",
          "Numbers, figures, paper and this report, generated from the log"],
     ]
-    test_rows = [
-        ["test_diff.py", "6", "Unified diff parsing and hunk arithmetic"],
-        ["test_semantic.py", "7", "Line-to-symbol resolution and signature changes"],
-        ["test_types.py", "5", "Context fingerprint determinism and schema limits"],
-        ["test_features.py", "5", "Feature extraction from diffs"],
-        ["test_heuristic.py", "5", "Ask on ambiguous, proceed on clear changes"],
-        ["test_uncertainty.py", "8", "Dispersion and entropy scoring"],
-        ["test_pipeline.py", "6", "Baseline equivalence, timeout fallback, fault isolation"],
-        ["test_llm_policy.py", "19", "Model roles, provider rules, independent judge"],
-        ["test_providers.py", "23", "Gemini/Anthropic backends, retries, quota, timeouts"],
-        ["test_store.py", "5", "Experiment log round-trip and cascades"],
-        ["test_experiments.py", "36", "Stripping, mutation, statistics, oracle isolation"],
-        ["test_tooling.py", "6", "Judge agreement, oracle audit, sweeps, replay"],
-    ]
+    test_rows = [[name, str(n), TEST_PURPOSE.get(name, "")] for name, n in test_counts()]
     ch.append(("METHODOLOGY AND TESTING", [
         ("h2", "5.1 Module Description"),
         ("p", f"The implementation comprises {loc['src']:,} lines in the core package, "
@@ -696,7 +712,8 @@ def chapters() -> list[tuple[str, list]]:
               "training set, is measured with Cohen's kappa [13] and read on the Landis-Koch "
               "scale [14]."),
         ("h2", "5.3 Testing"),
-        ("p", f"The system is covered by {N_TESTS} automated tests in twelve files (Table 5.2), "
+        ("p", f"The system is covered by {N_TESTS} automated tests in {len(test_counts())} files "
+              "(Table 5.2), "
               "all of which run offline in about two seconds. Tests were written for the "
               "properties the study's validity rests on, not only for function behaviour: "
               "determinism of ingestion, byte-identical prompts between baseline and treatment, "
@@ -724,6 +741,13 @@ def chapters() -> list[tuple[str, list]]:
           ["Model returned JSON with leading whitespace", "Valid reviews rejected",
            "Recover and re-validate against the schema"]],
          [2.6, 2.0, 2.0]),
+        ("p", "Writing end-to-end tests for the GitHub bot against a fake GitHub found three "
+              "further defects in its webhook path, all fixed: a reply resumed the review but the "
+              "log recorded the run as never having asked; a pull request whose author never "
+              "replied waited indefinitely instead of being reviewed at the timeout; and when "
+              "the bot ran under the author's own token, it read its own question as the "
+              "answer. The fixes replay the recorded detector decision on resumption, schedule "
+              "a timeout for every parked run, and ignore every comment the bot itself posted."),
     ]))
 
     # ---------------------------------------------------------------- 6

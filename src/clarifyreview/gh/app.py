@@ -4,9 +4,10 @@ Two events matter. `pull_request` (opened, synchronize) starts a run.
 `issue_comment` revives one that is parked waiting for an answer - a developer may
 take a day to reply, so the loop cannot be a blocking wait in a request handler.
 
-Parked runs live in memory here, which is correct for a lab prototype and clearly
-wrong for anything else; the note on `_PARKED` says so rather than pretending
-otherwise.
+A parked run ends one of two ways: the author replies, or the clarification
+timeout expires and the review is posted anyway, flagged as written without an
+answer. Parked runs live in memory, which is correct for a lab prototype and
+clearly wrong for anything else; the note on `Parked` says so.
 """
 
 from __future__ import annotations
@@ -14,21 +15,43 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import threading
+from dataclasses import dataclass
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 
 from ..config import settings
-from ..types import PRContext
+from ..types import Decision, PRContext
 from .client import GitHubClient
 
 log = logging.getLogger(__name__)
 app = FastAPI(title="ClarifyReview")
 
-# pr_id -> (context, posted question comment id). In-process only: a restart
-# forgets every parked run, which for a single-machine lab deployment is an
-# acceptable trade against running a job queue. Move to the `runs` table if this
-# ever needs to survive a deploy.
-_PARKED: dict[str, tuple[PRContext, int]] = {}
+# Every comment the bot posts - question or review - opens with this header, so
+# none of them can be mistaken for the author's answer.
+BOT_MARKER = "### ClarifyReview"
+
+
+@dataclass
+class Parked:
+    """A run waiting for the author's answer.
+
+    In-process only: a restart forgets every parked run, which for a
+    single-machine lab deployment is an acceptable trade against running a job
+    queue. Move to the `runs` table if this ever needs to survive a deploy.
+    """
+
+    ctx: PRContext
+    decision: Decision
+    question_comment_id: int
+    author: str | None
+    timer: threading.Timer | None = None
+
+
+_PARKED: dict[str, Parked] = {}
+# Webhook handlers run on a thread pool, and the timeout fires on its own
+# thread, so a reply and an expiry can race for the same parked run.
+_LOCK = threading.Lock()
 
 
 def verify_signature(body: bytes, signature: str | None) -> bool:
@@ -67,12 +90,27 @@ async def webhook(request: Request, background: BackgroundTasks) -> dict:
     if event == "issue_comment" and payload.get("action") == "created":
         repo = payload["repository"]["full_name"]
         number = payload["issue"]["number"]
-        commenter = payload["comment"]["user"]["login"]
-        body_text = payload["comment"]["body"]
-        background.add_task(handle_comment, repo, number, commenter, body_text)
+        comment = payload["comment"]
+        background.add_task(handle_comment, repo, number, comment["user"]["login"],
+                            comment["body"], comment.get("id"))
         return {"accepted": True, "event": event}
 
     return {"accepted": False, "event": event}
+
+
+class _RecordedDecision:
+    """Replays the Stage 2 decision made when the run was parked.
+
+    Resuming must not re-decide: the logged run has to show the decision that
+    actually caused the question, not a control-condition "never asks".
+    """
+
+    def __init__(self, decision: Decision) -> None:
+        self._decision = decision
+        self.name = decision.detector
+
+    def decide(self, ctx: PRContext) -> Decision:
+        return self._decision
 
 
 def handle_pull_request(repo: str, number: int) -> None:
@@ -80,7 +118,7 @@ def handle_pull_request(repo: str, number: int) -> None:
     from ..detect import build as build_detector
     from ..ingest import from_github
     from ..pipeline import CONDITION_STRIPPED_CLARIFY, Pipeline
-    from ..review.render import render_questions, render_review
+    from ..review.render import render_questions
     from ..types import ClarificationExchange
 
     cfg = settings()
@@ -94,41 +132,94 @@ def handle_pull_request(repo: str, number: int) -> None:
         if decision.ask:
             from ..clarify.question import QuestionGenerator
 
-            questions, _ = QuestionGenerator().generate(ctx)
-            exchange = ClarificationExchange(questions=questions, responder="github")
-            comment = gh.post_comment(repo, number, render_questions(exchange))
-            ctx.clarification = exchange
-            _PARKED[ctx.pr_id] = (ctx, comment["id"])
-            return
+            try:
+                questions, _ = QuestionGenerator().generate(ctx)
+            except Exception:  # noqa: BLE001
+                # A question that cannot be generated must not leave the pull
+                # request without a review; review it as a single pass instead.
+                log.exception("%s: question generation failed; reviewing without asking",
+                              ctx.pr_id)
+            else:
+                exchange = ClarificationExchange(questions=questions, responder="github")
+                comment = gh.post_comment(repo, number, render_questions(exchange))
+                author = gh.get_pull_request(repo, number).get("user", {}).get("login")
+                ctx.clarification = exchange
+                _park(Parked(ctx, decision, comment["id"], author),
+                      cfg.clarifyreview_clarify_timeout)
+                return
 
-        pipeline = Pipeline.plain(CONDITION_STRIPPED_CLARIFY)
-        pipeline.detector = detector
+        pipeline = Pipeline(detector=_RecordedDecision(decision), responder=None,
+                            condition=CONDITION_STRIPPED_CLARIFY)
         run = pipeline.run(ctx)
         _publish(gh, repo, number, run)
 
 
-def handle_comment(repo: str, number: int, commenter: str, body: str) -> None:
-    """Stage 3 resumption, then Stage 4."""
-    from ..pipeline import CONDITION_STRIPPED_CLARIFY, Pipeline
+def _park(parked: Parked, timeout_s: int) -> None:
+    pr_id = parked.ctx.pr_id
+    with _LOCK:
+        old = _PARKED.pop(pr_id, None)
+        if old and old.timer:
+            old.timer.cancel()      # a new push supersedes the earlier question
+        if timeout_s > 0:
+            parked.timer = threading.Timer(timeout_s, expire, args=(pr_id,))
+            parked.timer.daemon = True
+            parked.timer.start()
+        _PARKED[pr_id] = parked
 
+
+def handle_comment(repo: str, number: int, commenter: str, body: str,
+                   comment_id: int | None = None) -> None:
+    """Stage 3 resumption, then Stage 4."""
     pr_id = f"{repo}#{number}"
-    parked = _PARKED.pop(pr_id, None)
+    with _LOCK:
+        parked = _PARKED.get(pr_id)
+        if parked is None:
+            return
+        # The question itself arrives as an issue_comment event too. When the
+        # bot runs under the author's own token - the usual lab setup - it would
+        # otherwise read its own question as the answer.
+        if comment_id is not None and comment_id == parked.question_comment_id:
+            return
+        if (body or "").lstrip().startswith(BOT_MARKER):
+            return
+        if parked.author and commenter != parked.author:
+            return                  # not the author; keep waiting
+        _PARKED.pop(pr_id)
+        if parked.timer:
+            parked.timer.cancel()
+
+    exchange = parked.ctx.clarification
+    if exchange is not None:
+        exchange.answer = body
+        exchange.answered = bool(body and body.strip())
+        exchange.timed_out = False
+    _finish(parked)
+
+
+def expire(pr_id: str) -> None:
+    """No answer within the timeout: review anyway, flagged low-confidence."""
+    with _LOCK:
+        parked = _PARKED.pop(pr_id, None)
     if parked is None:
         return
+    exchange = parked.ctx.clarification
+    if exchange is not None:
+        exchange.answered = False
+        exchange.timed_out = True
+    log.info("%s: no answer within the timeout; reviewing without it", pr_id)
+    _finish(parked)
 
-    ctx, _comment_id = parked
+
+def _finish(parked: Parked) -> None:
+    from ..pipeline import CONDITION_STRIPPED_CLARIFY, Pipeline
+
+    ctx = parked.ctx
+    repo, number = ctx.repo, ctx.number
+    pipeline = Pipeline(detector=_RecordedDecision(parked.decision), responder=None,
+                        condition=CONDITION_STRIPPED_CLARIFY)
+    run = pipeline.run(ctx)
+    run.clarification = ctx.clarification
     with GitHubClient() as gh:
-        author = gh.get_pull_request(repo, number).get("user", {}).get("login")
-        if commenter != author:
-            _PARKED[pr_id] = parked  # not the author; keep waiting
-            return
-
-        if ctx.clarification is not None:
-            ctx.clarification.answer = body
-            ctx.clarification.answered = True
-            ctx.clarification.timed_out = False
-
-        run = Pipeline.plain(CONDITION_STRIPPED_CLARIFY).run(ctx)
         _publish(gh, repo, number, run)
 
 

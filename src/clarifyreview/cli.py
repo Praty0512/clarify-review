@@ -133,7 +133,10 @@ def cmd_review(args) -> int:
             print(f"[stage 3] asked [{q.target}] {q.question}", file=sys.stderr)
         print(f"[stage 3] answered={run.clarification.answered}\n", file=sys.stderr)
 
-    print(render_review(run.review))
+    note = None
+    if run.clarification and not run.clarification.answered:
+        note = "No answer was received, so this review was written without it."
+    print(render_review(run.review, detector_note=note))
     print(
         f"\n--- ${run.cost_usd:.4f}, {run.latency_ms}ms, "
         f"{run.input_tokens}in/{run.output_tokens}out "
