@@ -10,7 +10,10 @@ new experiment and the paper is current.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -150,16 +153,108 @@ def study(db: Path) -> dict:
     return out
 
 
-def main() -> int:
-    nums: dict = {}
-    nums["pilot"] = study(ROOT / "data/archive/pilot_2026-09-02.db")
-    nums["v2"] = study(ROOT / "data/study_v2.db")
+def _load_json(path: Path):
+    try:
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
 
-    mut = [json.loads(l) for l in (ROOT / "data/mutants.verified.jsonl").read_text().splitlines() if l]
+
+_JUDGE_METRICS = ("intent_recovered", "defect_caught", "false_alarm")
+
+
+def human_results(root: Path = ROOT) -> dict:
+    """What the human steps produced, read only from their own result files.
+
+    Every section carries "available". It is False whenever the file is missing or
+    empty, and build_paper.js then prints exactly what it printed before the human
+    steps existed. Nothing here is estimated, defaulted or filled in.
+
+    Keys consumed by build_paper.js:
+      labelling:  available, n, kappa, observed_agreement, reading, n_disagree,
+                  n_adjudicated, n_written, diff_source
+      thresholds: available, values (frozen thresholds), dev_sweep, n_labels, n_ambiguous
+      judge_validation: available, scorers, n_scorers,
+                  metrics {metric: {n (max over scorers), kappa_mean, kappas, n_per_scorer}},
+                  human_vs_judge, human_vs_human
+      study_b:    available, participants, usefulness, trust, would_act
+    """
+    root = Path(root)
+    out: dict = {}
+
+    rep = _load_json(root / "runs/labelling_agreement.json")
+    if isinstance(rep, dict) and rep.get("n") and rep.get("n_disagree_unadjudicated", 0) == 0:
+        out["labelling"] = {"available": True} | {
+            k: rep.get(k) for k in ("n", "kappa", "observed_agreement", "reading", "n_rows",
+                                    "n_disagree", "n_adjudicated", "n_written", "diff_source")}
+    else:
+        out["labelling"] = {"available": False}
+
+    sweep = _load_json(root / "runs/threshold_sweep.json")
+    frozen = _load_json(root / "data/thresholds.json")
+    if isinstance(sweep, dict) and sweep.get("n_labels"):
+        out["thresholds"] = {"available": True,
+                             "values": sweep.get("thresholds") or frozen,
+                             "dev_sweep": sweep.get("dev_sweep"),
+                             "n_labels": sweep.get("n_labels"),
+                             "n_ambiguous": sweep.get("n_ambiguous")}
+    else:
+        out["thresholds"] = {"available": False}
+
+    ja = _load_json(root / "runs/judge_agreement.json")
+    if isinstance(ja, dict) and ja.get("human_vs_judge"):
+        metrics = {}
+        for m in _JUDGE_METRICS:
+            per = [v.get(m) or {} for v in ja["human_vs_judge"].values()]
+            per = [d for d in per if d.get("n")]
+            if per:
+                ks = [d["kappa"] for d in per if d.get("kappa") is not None
+                      and not (isinstance(d["kappa"], float) and math.isnan(d["kappa"]))]
+                metrics[m] = {"n": max(d["n"] for d in per),
+                              "n_per_scorer": [d["n"] for d in per],
+                              "kappas": ks,
+                              "kappa_mean": (sum(ks) / len(ks)) if ks else None}
+        out["judge_validation"] = {
+            "available": bool(metrics), "scorers": ja.get("scorers", []),
+            "n_scorers": len(ja.get("scorers", [])), "metrics": metrics,
+            "human_vs_judge": ja["human_vs_judge"],
+            "human_vs_human": ja.get("human_vs_human", {})}
+    else:
+        out["judge_validation"] = {"available": False}
+
+    sb = _load_json(root / "runs/study_b_report.json")
+    if isinstance(sb, dict) and sb.get("participants") and (sb.get("usefulness") or {}).get("n"):
+        out["study_b"] = {"available": True} | {
+            k: sb.get(k) for k in ("participants", "usefulness", "trust", "would_act", "ratings")}
+    else:
+        out["study_b"] = {"available": False}
+    return out
+
+
+def _clean(x):
+    # NaN is how an undefined gap recovery comes out of the analysis (the pilot's
+    # floor equalled its ceiling). It is not valid JSON, so it becomes null and the
+    # paper prints "n/a" rather than a number that does not exist.
+    if isinstance(x, float) and math.isnan(x):
+        return None
+    if isinstance(x, dict):
+        return {k: _clean(v) for k, v in x.items()}
+    if isinstance(x, list):
+        return [_clean(v) for v in x]
+    return x
+
+
+def main(root: Path = ROOT) -> int:
+    root = Path(root)
+    nums: dict = {}
+    nums["pilot"] = study(root / "data/archive/pilot_2026-09-02.db")
+    nums["v2"] = study(root / "data/study_v2.db")
+
+    mut = [json.loads(l) for l in (root / "data/mutants.verified.jsonl").read_text().splitlines() if l]
     nums["mutants"] = {"attempted": len(mut), "by_status": dict(Counter(m["status"] for m in mut)),
                        "operators": dict(Counter(m["mutation_op"] for m in mut if m["status"] == "verified"))}
 
-    inst_v2 = ROOT / "data/instances.v2.jsonl"
+    inst_v2 = root / "data/instances.v2.jsonl"
     if inst_v2.exists():
         rows = [json.loads(l) for l in inst_v2.read_text().splitlines() if l]
         nums["v2_design"] = {
@@ -169,37 +264,26 @@ def main() -> int:
             "difficulty": dict(Counter(r["difficulty"] for r in rows)),
         }
     det = {}
-    for f in sorted((ROOT / "runs").glob("detector_comparison*.json")):
+    for f in sorted((root / "runs").glob("detector_comparison*.json")):
         for name, d in json.loads(f.read_text())["detectors"].items():
             det[name] = {k: v for k, v in d.items() if k != "decisions"}
     nums["detectors"] = det
 
-    tests = list(ROOT.glob("tests/test_*.py"))
-    import subprocess
-    res = subprocess.run([str(ROOT / ".venv/bin/python"), "-m", "pytest", "-q"], cwd=ROOT,
+    tests = list(root.glob("tests/test_*.py"))
+    # sys.executable: the interpreter running this script is the project's own
+    # environment on every platform (there is no .venv/bin on Windows).
+    res = subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=root,
                          capture_output=True, text=True)
-    nums["tests_passing"] = res.stdout.strip().splitlines()[-1] if res.stdout else "?"
+    nums["tests_passing"] = res.stdout.strip().splitlines()[-1] if res.stdout.strip() else "?"
     nums["loc"] = {
-        "src": sum(len(p.read_text().splitlines()) for p in (ROOT / "src").rglob("*.py")),
-        "experiments": sum(len(p.read_text().splitlines()) for p in (ROOT / "experiments").glob("*.py")),
+        "src": sum(len(p.read_text().splitlines()) for p in (root / "src").rglob("*.py")),
+        "experiments": sum(len(p.read_text().splitlines()) for p in (root / "experiments").glob("*.py")),
         "tests": sum(len(p.read_text().splitlines()) for p in tests),
     }
-    out = ROOT / "paper/numbers.json"
-    # NaN is how an undefined gap recovery comes out of the analysis (the pilot's
-    # floor equalled its ceiling). It is not valid JSON, so it becomes null and the
-    # paper prints "n/a" rather than a number that does not exist.
-    import math
-
-    def clean(x):
-        if isinstance(x, float) and math.isnan(x):
-            return None
-        if isinstance(x, dict):
-            return {k: clean(v) for k, v in x.items()}
-        if isinstance(x, list):
-            return [clean(v) for v in x]
-        return x
-
-    out.write_text(json.dumps(clean(nums), indent=2, default=str, allow_nan=False))
+    nums["human"] = human_results(root)
+    out = root / "paper/numbers.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(_clean(nums), indent=2, default=str, allow_nan=False))
     print(f"wrote {out}")
     print(json.dumps({k: nums[k] for k in ("mutants", "tests_passing", "loc")}, indent=2))
     return 0

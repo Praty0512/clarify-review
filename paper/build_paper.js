@@ -250,14 +250,50 @@ const discussion = [
   P("Finally, clarification cannot exceed the reviewer. On a small free-tier model, full context did not make the reviewer catch injected defects, so detection gains, if they exist, require a stronger reviewer before intent can matter."),
 ];
 
+// Human-step results (labelling, judge validation, Study B). Each block exists only
+// when collect.py found the matching result file; with none of them, every sentence
+// below is exactly the text the paper had before those steps were run.
+const HUM = N.human || {};
+const HL = HUM.labelling?.available ? HUM.labelling : null;
+const HT = HUM.thresholds?.available ? HUM.thresholds : null;
+const HJ = HUM.judge_validation?.available ? HUM.judge_validation : null;
+const HB = HUM.study_b?.available ? HUM.study_b : null;
+const pf = x => (x === null || x === undefined || Number.isNaN(x)) ? "n/a" : (x < 0.001 ? "< 0.001" : Number(x).toFixed(3));
+const joinList = xs => xs.length <= 2 ? xs.join(" and ") : xs.slice(0, -1).join(", ") + ", and " + xs[xs.length - 1];
+
+function judgeSentence() {
+  if (!HJ) return null;
+  const names = { intent_recovered: "intent recovered", defect_caught: "defect caught", false_alarm: "false alarm" };
+  const parts = Object.keys(names).filter(m => HJ.metrics?.[m]).map(m =>
+    `${f2(HJ.metrics[m].kappa_mean)} for ${names[m]} (n = ${HJ.metrics[m].n})`);
+  if (!parts.length) return null;
+  return `The judge was validated against ${HJ.n_scorers} independent human scorer${HJ.n_scorers === 1 ? "" : "s"} on a stratified sample of its own reviews, shown without the judge's answers or the condition; Cohen's κ ${cite("cohen")} between human and judge was ${parts.join(", ")}. Blank cells were excluded, not counted as disagreement.`;
+}
+
+function humanParas() {
+  const out = [];
+  if (HL) {
+    const thr = HT ? ` Thresholds were frozen on a development split of these labels (${HT.n_labels} labelled, ${HT.n_ambiguous} ambiguous) before any threshold-dependent evaluation; note that Study A itself ran with the default thresholds.` : "";
+    out.push(P(`Human labelling. Two annotators independently labelled ${HL.n} pull requests as clear or unclear from the code change alone; Cohen's κ ${cite("cohen")} was ${f2(HL.kappa)} (${HL.reading}, observed agreement ${pct(HL.observed_agreement)}). The ${HL.n_disagree} disagreements were resolved by adjudication; adjudicators could consult an automatic heuristic suggestion, which is a weak aid and not a label.${thr}`));
+  }
+  if (HB) {
+    const u = HB.usefulness || {}, t = HB.trust || {}, w = HB.would_act || {};
+    const bit = (name, d) => d && d.n ? `${name} (n = ${d.n}; plain ${f2(d.mean_a)}, clarify ${f2(d.mean_b)}; Wilcoxon p = ${pf(d.p_value)}, rank-biserial r = ${f2(d.effect_size_r)})` : null;
+    const act = (w.plain?.n && w.clarify?.n) ? ` The share who would act on the review was ${pct(w.plain.rate)} for plain and ${pct(w.clarify.rate)} for clarify.` : "";
+    out.push(P(`Developer study. ${HB.participants} participants rated paired reviews blind to condition: ${joinList([bit("usefulness", u), bit("trust", t)].filter(Boolean))}.${act}`));
+  }
+  return out;
+}
+
 const threats = [
   H("VII", "Threats to Validity"),
-  P(`The sample is small (${v2.complete_triples} instances under per-model daily quotas), so intervals are wide. The judge has not yet been validated against human scoring; a stratified sample and agreement tooling (Cohen's κ ${cite("cohen")}) are provided. The simulated author answers from withheld text only, but leakage requires the hand audit the tooling prepares. We report a protocol deviation: in the first v2 run the simulated author's token budget was exhausted by its model's hidden reasoning, returning empty answers, and its prompt refused questions phrased in terms of unseen code. Both were corrected and the treatment re-run for the six affected instances; floor and ceiling were not re-run, and the prompt revision, made after observing refusals, is logged with every exchange. All verified mutants come from sympy and the operators produce simple defects. The reviewer is a small model; results may differ for stronger ones.`),
+  P(`The sample is small (${v2.complete_triples} instances under per-model daily quotas), so intervals are wide. ${judgeSentence() ?? `The judge has not yet been validated against human scoring; a stratified sample and agreement tooling (Cohen's κ ${cite("cohen")}) are provided.`} The simulated author answers from withheld text only, but leakage requires the hand audit the tooling prepares. We report a protocol deviation: in the first v2 run the simulated author's token budget was exhausted by its model's hidden reasoning, returning empty answers, and its prompt refused questions phrased in terms of unseen code. Both were corrected and the treatment re-run for the six affected instances; floor and ceiling were not re-run, and the prompt revision, made after observing refusals, is logged with every exchange. All verified mutants come from sympy and the operators produce simple defects. The reviewer is a small model; results may differ for stronger ones.`),
+  ...humanParas(),
 ];
 
 const conclusion = [
   H("VIII", "Conclusion"),
-  P(`ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change. Evaluating the idea required withholding all natural-language intent, because golden patches document their own. With that manipulation, clarification recovered ${f2(IA.gap_recovery)} of the intent gap on ${v2.complete_triples} instances—in the expected direction, not significant at this size—and a per-instance trace shows it succeeded where it was given the chance, with detector recall as the limit. Future work is a human-labelled set to train and calibrate the detectors, human validation of the judge, a paired developer study of usefulness and trust, and a larger run with a stronger reviewer.`),
+  P(`ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change. Evaluating the idea required withholding all natural-language intent, because golden patches document their own. With that manipulation, clarification recovered ${f2(IA.gap_recovery)} of the intent gap on ${v2.complete_triples} instances—in the expected direction, not significant at this size—and a per-instance trace shows it succeeded where it was given the chance, with detector recall as the limit. Future work is ${joinList([HL ? null : "a human-labelled set to train and calibrate the detectors", HJ ? null : "human validation of the judge", HB ? null : "a paired developer study of usefulness and trust", "a larger run with a stronger reviewer"].filter(Boolean))}.`),
 ];
 
 const ack = [
