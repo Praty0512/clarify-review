@@ -379,11 +379,11 @@
       "mean_ms": 31152.4
     }
   },
-  "tests_passing": "445 passed, 1 skipped in 9.94s",
+  "tests_passing": "446 passed in 4.26s",
   "loc": {
-    "src": 6357,
+    "src": 6375,
     "experiments": 5503,
-    "tests": 5280
+    "tests": 5284
   },
   "test_files": 28,
   "tests_by_file": {
@@ -1640,9 +1640,9 @@
     "uncertainty_instances": 4,
     "uncertainty_s_min": 31,
     "uncertainty_s_max": 45,
-    "tests_passed": 445,
-    "tests_skipped": 1,
-    "tests_seconds": 10,
+    "tests_passed": 446,
+    "tests_skipped": 0,
+    "tests_seconds": 4,
     "v2_asked_latency_minutes": 3,
     "llama_no_defect_claim_pct": 56,
     "v3_asked_on_understood": 9,
