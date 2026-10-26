@@ -4,7 +4,8 @@
     clarifyreview ingest      --repo owner/name --pr 42
     clarifyreview detect      --repo owner/name --pr 42 [--detector sampling]
     clarifyreview review      --repo owner/name --pr 42 [--post]
-    clarifyreview serve       [--port 8000]
+    clarifyreview serve       [--port 8000] [--sweep-interval 300]
+    clarifyreview sweep       [--limit 20]
     clarifyreview replay      [--db data/study_v2.db] [--pr-id ID | --list]
 
 `--diff` accepts a local diff file anywhere `--repo/--pr` is accepted, so the
@@ -278,14 +279,47 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_sweep(args) -> int:
+    """One pass over parked runs whose clarification deadline has passed - for cron
+    or a scheduled task when the server itself is not left running."""
+    from .gh.app import sweep_expired
+
+    handled = sweep_expired(limit=args.limit)
+    print(f"swept {handled} expired parked run(s)")
+    return 0
+
+
 def cmd_serve(args) -> int:
+    import os
+
     import uvicorn
 
+    if args.sweep_interval is not None:
+        from .gh.settings import reset_bot_settings
+
+        os.environ["CLARIFYREVIEW_SWEEP_INTERVAL_S"] = str(args.sweep_interval)
+        reset_bot_settings()
     uvicorn.run("clarifyreview.gh.app:app", host=args.host, port=args.port, reload=args.reload)
     return 0
 
 
+def _force_utf8_streams() -> None:
+    """Keep output with box-drawing characters from crashing on Windows code
+    pages (cp1252) when stdout/stderr is piped or redirected."""
+    for stream in (sys.stdout, sys.stderr):
+        enc = (getattr(stream, "encoding", None) or "").lower().replace("_", "-")
+        if enc in ("utf-8", "utf8"):
+            continue
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(encoding="utf-8", errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def main(argv: list[str] | None = None) -> int:
+    _force_utf8_streams()
     parser = argparse.ArgumentParser(prog="clarifyreview")
     parser.add_argument("-v", "--verbose", action="store_true")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -338,7 +372,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=8000)
     p.add_argument("--reload", action="store_true")
+    p.add_argument("--sweep-interval", type=float, default=None,
+                   help="seconds between sweeps for expired parked runs "
+                        "(default CLARIFYREVIEW_SWEEP_INTERVAL_S=300; 0 turns it off)")
     p.set_defaults(func=cmd_serve)
+
+    p = sub.add_parser("sweep", help="finish parked runs whose clarification deadline passed")
+    p.add_argument("--limit", type=int, default=20)
+    p.set_defaults(func=cmd_sweep)
 
     args = parser.parse_args(argv)
     logging.basicConfig(

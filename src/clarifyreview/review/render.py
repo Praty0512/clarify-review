@@ -9,6 +9,24 @@ from __future__ import annotations
 
 from ..types import ClarificationExchange, ReviewOutput
 
+# Hidden markers let the bot recognise its own comments. They matter when the bot
+# runs on a personal access token: its question is then posted by the same account
+# as the PR author, and without a marker it would read as the author's answer.
+MARKER_PREFIX = "<!-- clarifyreview"
+QUESTION_MARKER = "<!-- clarifyreview:question -->"
+ERROR_MARKER = "<!-- clarifyreview:error -->"
+
+
+def review_marker(head_sha: str | None = None) -> str:
+    if head_sha:
+        return f"<!-- clarifyreview:review sha={head_sha} -->"
+    return "<!-- clarifyreview:review -->"
+
+
+def has_marker(body: str | None) -> bool:
+    return MARKER_PREFIX in (body or "")
+
+
 _SEVERITY_MARK = {
     "blocking": "**blocking**",
     "major": "**major**",
@@ -22,7 +40,9 @@ _VERDICT_LINE = {
 }
 
 
-def render_review(review: ReviewOutput, detector_note: str | None = None) -> str:
+def render_review(
+    review: ReviewOutput, detector_note: str | None = None, marker: str | None = None
+) -> str:
     lines: list[str] = ["### ClarifyReview", "", f"**What this looks like:** {review.intent_summary}", ""]
 
     if not review.findings:
@@ -50,10 +70,11 @@ def render_review(review: ReviewOutput, detector_note: str | None = None) -> str
     lines += ["", f"_Overall confidence: {review.overall_confidence:.0%}_"]
     if detector_note:
         lines.append(f"_{detector_note}_")
-    return "\n".join(lines)
+    out = "\n".join(lines)
+    return out if marker is None else f"{marker}\n{out}"
 
 
-def render_questions(exchange: ClarificationExchange) -> str:
+def render_questions(exchange: ClarificationExchange, marker: str | None = None) -> str:
     """The comment posted when Stage 2 says ask.
 
     Kept short on purpose. A question that arrives wrapped in three paragraphs of
@@ -70,4 +91,5 @@ def render_questions(exchange: ClarificationExchange) -> str:
     for q in qs.questions:
         lines.append(f"- **{q.target}** — {q.question}")
     lines += ["", "_Reply here and I'll review with that in mind._"]
-    return "\n".join(lines)
+    out = "\n".join(lines)
+    return out if marker is None else f"{marker}\n{out}"

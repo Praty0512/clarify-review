@@ -156,3 +156,65 @@ def test_treatment_condition_requires_a_responder():
 
     with pytest.raises(ValueError, match="responder"):
         build_condition(CONDITION_STRIPPED_CLARIFY, responder=None)
+
+
+def test_a_supplied_decision_skips_stage_2(ambiguous_ctx):
+    """The live bot decides before it can post a question; the pipeline must not
+    pay for the detector a second time."""
+    from clarifyreview.pipeline import CONDITION_GITHUB_LIVE
+    from clarifyreview.types import Decision, DetectorName
+
+    class CountingDetector(NeverAskDetector):
+        calls = 0
+
+        def decide(self, ctx):
+            type(self).calls += 1
+            return super().decide(ctx)
+
+    decision = Decision(ask=False, score=0.1, why="precomputed", cost_usd=0.5,
+                        detector=DetectorName.SAMPLING, threshold=0.35)
+    gen = StubGenerator()
+    pipeline = Pipeline(detector=CountingDetector(), generator=gen,
+                        condition=CONDITION_GITHUB_LIVE)
+    run = pipeline.run(ambiguous_ctx, decision=decision)
+
+    assert CountingDetector.calls == 0
+    assert run.decision is decision
+    assert run.detector is DetectorName.SAMPLING
+    assert run.condition == "github_live"
+    assert run.cost_usd == pytest.approx(0.5 + 0.001)
+
+
+def test_a_resumed_run_keeps_the_exchange_already_on_the_context(ambiguous_ctx):
+    from clarifyreview.types import (
+        ClarificationExchange, Decision, DetectorName,
+    )
+
+    ambiguous_ctx.clarification = ClarificationExchange(
+        questions=StubQuestions().generate(ambiguous_ctx)[0],
+        answer="Moved to the gateway.", answered=True, responder="github",
+    )
+    decision = Decision(ask=True, score=0.9, why="x", detector=DetectorName.HEURISTIC,
+                        threshold=0.5)
+    gen = StubGenerator()
+    responder = AnsweringResponder()
+    run = Pipeline(responder=responder, generator=gen).run(ambiguous_ctx, decision=decision)
+
+    assert run.clarification is ambiguous_ctx.clarification
+    assert responder.asked == []  # not asked a second time
+    assert "Moved to the gateway." in gen.seen_contexts[0]
+
+
+def test_render_is_byte_identical_without_a_marker_and_prefixed_with_one():
+    from clarifyreview.review.render import QUESTION_MARKER, render_questions, render_review
+    from clarifyreview.types import ClarificationExchange
+
+    review = StubGenerator().generate(__import__("types").SimpleNamespace(
+        render=lambda: "", fingerprint=lambda: ""))[0]
+    plain = render_review(review, detector_note="n")
+    assert render_review(review, detector_note="n", marker=None) == plain
+    assert render_review(review, detector_note="n", marker="<!-- m -->") == "<!-- m -->\n" + plain
+
+    exchange = ClarificationExchange(questions=StubQuestions().generate(None)[0])
+    q = render_questions(exchange)
+    assert render_questions(exchange, marker=QUESTION_MARKER) == QUESTION_MARKER + "\n" + q

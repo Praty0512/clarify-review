@@ -16,7 +16,7 @@ import time
 from .clarify.loop import ClarificationLoop, Responder
 from .detect.base import BaseDetector, NeverAskDetector
 from .review.generator import ReviewGenerator
-from .types import DetectorName, PRContext, ReviewRun
+from .types import Decision, DetectorName, PRContext, ReviewRun
 
 log = logging.getLogger(__name__)
 
@@ -24,6 +24,9 @@ log = logging.getLogger(__name__)
 CONDITION_FULL_PLAIN = "full_plain"  # ceiling: full context, single pass
 CONDITION_STRIPPED_PLAIN = "stripped_plain"  # floor: context stripped, single pass
 CONDITION_STRIPPED_CLARIFY = "stripped_clarify"  # treatment
+# Production runs from the GitHub bot. Never a Study A condition, so a live run can
+# not leak into the ablation's analysis tables.
+CONDITION_GITHUB_LIVE = "github_live"
 
 
 class Pipeline:
@@ -47,23 +50,33 @@ class Pipeline:
             condition=condition,
         )
 
-    def run(self, ctx: PRContext) -> ReviewRun:
+    def run(self, ctx: PRContext, *, decision: Decision | None = None) -> ReviewRun:
+        """Run the stages. `decision` lets a caller that already ran Stage 2 (the
+        live bot, which must decide before it can post a question) hand the result
+        in instead of paying for the detector a second time."""
         started = time.monotonic()
         run = ReviewRun(
             pr_id=ctx.pr_id,
             condition=self.condition,
-            detector=getattr(self.detector, "name", None),
+            detector=decision.detector if decision is not None
+            else getattr(self.detector, "name", None),
             context_fingerprint=ctx.fingerprint(),
         )
 
         try:
             # Stage 2 - the branch.
-            decision = self.detector.decide(ctx)
+            supplied = decision is not None
+            if decision is None:
+                decision = self.detector.decide(ctx)
             run.decision = decision
             run.cost_usd += decision.cost_usd
 
             # Stage 3 - only when Stage 2 said ask and someone can answer.
-            if decision.ask and self.responder is not None:
+            if decision.ask and supplied and ctx.clarification is not None:
+                # A resumed run: the question was asked and the answer (or the
+                # timeout) is already on the context.
+                run.clarification = ctx.clarification
+            elif decision.ask and self.responder is not None:
                 loop = ClarificationLoop(self.responder)
                 exchange, cost = loop.run(ctx)
                 run.clarification = exchange
