@@ -1,0 +1,26 @@
+# Repositories for the real-PR labelling set (2-4 per language).
+# Mix of large team projects and smaller maintainer-run ones, so PR
+# description quality varies; the set needs both clear and unclear PRs.
+# python
+pallets/flask
+encode/httpx
+pydantic/pydantic
+psf/black
+# javascript
+expressjs/express
+webpack/webpack
+# typescript
+vitejs/vite
+vuejs/core
+# java
+apache/kafka
+apache/commons-lang
+# rust
+tokio-rs/tokio
+BurntSushi/ripgrep
+# c
+curl/curl
+redis/redis
+# c++
+nlohmann/json
+fmtlib/fmt
