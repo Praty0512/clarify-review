@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -211,26 +212,44 @@ def _agreement(a: list[int], b: list[int]) -> dict:
     }
 
 
-def judge_agreement(paths: list[Path]) -> dict:
+def _read_csv(path: Path) -> list[dict]:
+    import csv
+
+    csv.field_size_limit(10**8)
+    with Path(path).open(newline="", encoding="utf-8-sig") as fh:
+        return list(csv.DictReader(fh))
+
+
+def judge_agreement(paths: list[Path], reference: Path | None = None) -> dict:
     """Agreement between each human scorer and the judge, and between the humans.
 
-    Each CSV is one scorer's copy of the sample written by
-    `experiments.judge --sample-for-humans`. Rows a scorer left blank are
-    excluded from that scorer's figures rather than counted as disagreement, and
-    the count actually compared is reported next to every kappa.
+    Each CSV is one scorer's copy of the sample. Blind copies carry no judge_*
+    columns (so the human is not anchored); the judge's answers are then looked up
+    by run_id in `reference`, the shared sample written by
+    `experiments.judge --sample-for-humans`. A judge_* value on the scorer's own
+    row takes precedence. Rows a scorer left blank are excluded from that
+    scorer's figures rather than counted as disagreement, and the count actually
+    compared is reported next to every kappa.
     """
-    import csv
+    ref_rows: dict[str, dict] = {}
+    if reference is not None and Path(reference).exists():
+        ref_rows = {r["run_id"]: r for r in _read_csv(reference)}
+
+    def judge_value(row: dict, metric: str):
+        own = row.get(f"judge_{metric}")
+        if own not in (None, ""):
+            return own
+        return ref_rows.get(row["run_id"], {}).get(f"judge_{metric}")
 
     scorers: dict[str, dict[str, dict]] = {}
     for path in paths:
-        with Path(path).open(encoding="utf-8") as fh:
-            scorers[Path(path).stem] = {row["run_id"]: row for row in csv.DictReader(fh)}
+        scorers[Path(path).stem] = {row["run_id"]: row for row in _read_csv(path)}
 
     out: dict = {"scorers": sorted(scorers), "human_vs_judge": {}, "human_vs_human": {}}
     for name, rows in scorers.items():
         per = {}
         for m in JUDGE_METRICS:
-            pairs = [(_as_bool(r.get(f"human_{m}")), _as_bool(r.get(f"judge_{m}")))
+            pairs = [(_as_bool(r.get(f"human_{m}")), _as_bool(judge_value(r, m)))
                      for r in rows.values()]
             pairs = [(h, j) for h, j in pairs if h is not None and j is not None]
             per[m] = _agreement([h for h, _ in pairs], [j for _, j in pairs])
@@ -416,15 +435,33 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--study-b", help="CSV of paired ratings from the developer study")
     ap.add_argument("--judge-agreement", nargs="+", metavar="CSV",
                     help="one filled judge-validation CSV per human scorer")
+    ap.add_argument("--reference", default=None,
+                    help="shared sample holding the judge_* columns (default: "
+                         "runs/judge_validation_sample.csv if it exists)")
     args = ap.parse_args(argv)
+    args.out_explicit = any(a == "--out" or a.startswith("--out=")
+                            for a in (argv if argv is not None else sys.argv[1:]))
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     if args.judge_agreement:
-        print(json.dumps(judge_agreement([Path(p) for p in args.judge_agreement]), indent=2))
+        ref = Path(args.reference) if args.reference else Path("runs/judge_validation_sample.csv")
+        ref = ref if ref.exists() else None
+        paths = [Path(p) for p in args.judge_agreement]
+        if ref is not None:
+            paths = [p for p in paths if p.resolve() != ref.resolve()]
+        report = judge_agreement(paths, ref)
+        if args.out_explicit:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True))
+        print(json.dumps(report, indent=2))
         return 0
 
     if args.study_b:
-        print(json.dumps(_study_b_from_csv(Path(args.study_b)), indent=2))
+        report = study_b_report(Path(args.study_b))
+        if args.out_explicit:
+            Path(args.out).parent.mkdir(parents=True, exist_ok=True)
+            Path(args.out).write_text(json.dumps(report, indent=2, sort_keys=True))
+        print(json.dumps(report, indent=2))
         return 0
 
     db_path = Path(args.db) if args.db else settings().clarifyreview_db
@@ -436,21 +473,58 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def study_b_report(path: Path) -> dict:
+    """Study B from the merged CSV (`study.merge_responses`).
+
+    Expects columns participant, pr_id, condition, usefulness, trust, would_act.
+    Usefulness and trust: per-participant means in each condition, then a paired
+    Wilcoxon signed-rank test and rank-biserial effect size. would_act: the share
+    of ratings that said "yes" in each condition. Ratings are the raw ordinal
+    scores; blank cells are skipped.
+    """
+    rows = _read_csv(path)
+
+    def num(v):
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    def cond(row):
+        return "clarify" if "clarify" in row["condition"] else "plain"
+
+    out: dict = {}
+    participants_all = sorted({r["participant"] for r in rows})
+    for metric in ("usefulness", "trust"):
+        per: dict[str, dict[str, list[float]]] = {}
+        for r in rows:
+            v = num(r.get(metric))
+            if v is not None:
+                per.setdefault(r["participant"], {"plain": [], "clarify": []})[cond(r)].append(v)
+        complete = sorted(k for k, v in per.items() if v["plain"] and v["clarify"])
+        a = [float(np.mean(per[p]["plain"])) for p in complete]
+        b = [float(np.mean(per[p]["clarify"])) for p in complete]
+        out[metric] = wilcoxon_paired(a, b) if a else {"n": 0}
+
+    act: dict[str, list[int]] = {"plain": [], "clarify": []}
+    for r in rows:
+        v = _as_bool(r.get("would_act"))
+        if v is not None:
+            act[cond(r)].append(v)
+    out["would_act"] = {
+        c: {"n": len(v), "rate": round(sum(v) / len(v), 4) if v else None}
+        for c, v in act.items()
+    }
+    out["participants"] = out["usefulness"].get("n", 0)
+    out["participant_ids"] = participants_all
+    out["ratings"] = len(rows)
+    return out
+
+
 def _study_b_from_csv(path: Path) -> dict:
-    """Expects columns: participant, pr_id, condition, usefulness, trust, would_act."""
-    import csv
-
-    rows = list(csv.DictReader(path.open(encoding="utf-8")))
-    per_participant: dict[str, dict[str, list[float]]] = {}
-    for row in rows:
-        p = per_participant.setdefault(row["participant"], {"plain": [], "clarify": []})
-        key = "clarify" if "clarify" in row["condition"] else "plain"
-        p[key].append(float(row["usefulness"]))
-
-    participants = sorted(k for k, v in per_participant.items() if v["plain"] and v["clarify"])
-    a = [float(np.mean(per_participant[p]["plain"])) for p in participants]
-    b = [float(np.mean(per_participant[p]["clarify"])) for p in participants]
-    return {"usefulness": wilcoxon_paired(a, b), "participants": len(participants)}
+    """Backward-compatible wrapper: the usefulness test and participant count."""
+    rep = study_b_report(path)
+    return {"usefulness": rep["usefulness"], "participants": rep["participants"]}
 
 
 if __name__ == "__main__":

@@ -18,16 +18,23 @@ Block kinds:
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from prose import fixed, numword, prose  # noqa: E402  (placeholder text: docs/prose_v3.json)
+
 FIG = ROOT / "docs/figures"
-N = json.loads((ROOT / "paper/numbers.json").read_text())
+N = json.loads((ROOT / "paper/numbers.json").read_text(encoding="utf-8"))
 V2 = N["v2"]
 T = V2["tests"]
 F = V2["funnel"]
 DET = N["detectors"]
 MUT = N["mutants"]
+# Second-model replication (v3) and judge calibration. Never pooled with V2.
+V3, V2A, J = N["v3_local"], N["v2_agent_judge"], N["judges"]
+S3, D3, RP, DV = N["v3_setup"], N["v3_design"], N["realpr"], N["derived"]
 
 TITLE = ("CLARIFYREVIEW: AMBIGUITY-AWARE INTENT CLARIFICATION FOR LLM-BASED "
          "PULL REQUEST CODE REVIEW")
@@ -36,10 +43,19 @@ TITLE_CASE = ("ClarifyReview: Ambiguity-Aware Intent Clarification for LLM-Based
 STUDENTS = [("23BCE0225", "YASHIKA GUPTA"), ("23BCE0316", "PRATYAKSH GUPTA")]
 GUIDE, DESIGNATION = "Prof. Arivoli A", "Assistant Professor"
 N_TESTS = int(N["tests_passing"].split()[0])
+N_TEST_FILES = N["test_files"]
 
 
 def pct(x: float) -> str:
     return f"{round(x * 100)}%"
+
+
+def pairs(n: int, lead: bool = True) -> str:
+    """'One pair' / 'Three pairs' (sentence start) or 'none' / 'one' / 'three' (after 'and')."""
+    if not lead:
+        return "none" if n == 0 else numword(n)
+    w = numword(n).capitalize()
+    return f"{w} pair" if n == 1 else f"{w} pairs"
 
 
 def frac(rate: float, n: int) -> str:
@@ -79,7 +95,7 @@ ABSTRACT = [
     f"{MUT['by_status']['verified']} defects were verified by running each repository's own "
     "tests.",
 
-    f"On {IA['n']} complete instances (108 judged reviews), intent recovery was {pct(IA['floor'])} "
+    f"On {IA['n']} complete instances ({V2['judged']} judged reviews), intent recovery was {pct(IA['floor'])} "
     f"at the floor, {pct(IA['treatment'])} with clarification and {pct(IA['ceiling'])} at the "
     f"ceiling: a gap recovery of {IA['gap_recovery']:.2f}, not statistically significant at this "
     f"sample size (McNemar p = {IA['mcnemar_p']:.2f}). Tracing each instance locates the limit "
@@ -87,10 +103,14 @@ ABSTRACT = [
     f"{F['detector_asked']} of them, the author answered {F['author_answered']}, and in that "
     "case the treatment recovered the intent the floor had missed. The bottleneck is therefore "
     "detector recall rather than the value of an answer. Injected defects were caught in at "
-    "most two of twelve cases in any condition, including with full context, which places the "
+    f"most {numword(DV['v2_defect_max_caught'])} of {numword(DV['v2']['defect_mutant']['n'])} "
+    "cases in any condition, including with full context, which places the "
     "limit on defect detection in the reviewer model rather than in missing intent. The "
     "prototype reaches technology readiness level 4, and a conference paper reporting these "
     "results has been prepared.",
+
+    # Added for Review 3: second-model replication, judge calibration, what is not done.
+    prose("report.abstract.v3"),
 ]
 KEYWORDS = ("Automated Code Review, Large Language Models, Intent Clarification, Ambiguity "
             "Detection, Uncertainty Quantification, Mutation Testing, Empirical Software "
@@ -218,36 +238,6 @@ LITERATURE = [
 
 # ------------------------------------------------------------------ chapters
 
-TEST_PURPOSE = {
-    "test_diff.py": "Unified diff parsing and hunk arithmetic",
-    "test_semantic.py": "Line-to-symbol resolution and signature changes",
-    "test_types.py": "Context fingerprint determinism and schema limits",
-    "test_features.py": "Feature extraction from diffs",
-    "test_heuristic.py": "Ask on ambiguous, proceed on clear changes",
-    "test_uncertainty.py": "Dispersion and entropy scoring",
-    "test_pipeline.py": "Baseline equivalence, timeout fallback, fault isolation",
-    "test_llm_policy.py": "Model roles, provider rules, independent judge",
-    "test_providers.py": "Gemini/Anthropic backends, retries, quota, timeouts",
-    "test_store.py": "Experiment log round-trip and cascades",
-    "test_experiments.py": "Stripping, mutation, statistics, oracle isolation",
-    "test_tooling.py": "Judge agreement, oracle audit, sweeps, replay",
-    "test_github_bot.py": "Webhook auth, park and resume, timeout, ignoring the bot's own comments",
-}
-
-
-def test_counts() -> list[tuple[str, int]]:
-    """Tests per file as pytest collects them, parametrised cases included,
-    so the table always sums to the suite total quoted in the text."""
-    import subprocess
-    from collections import Counter
-
-    out = subprocess.run([str(ROOT / ".venv/bin/python"), "-m", "pytest", "--collect-only", "-q"],
-                         cwd=ROOT, capture_output=True, text=True).stdout
-    counts = Counter(line.split("::")[0].split("/")[-1] for line in out.splitlines() if "::" in line)
-    return sorted(counts.items())
-
-
-
 def chapters() -> list[tuple[str, list]]:
     ia, dm, fa = IA, DM, FA
     det = DET
@@ -291,21 +281,12 @@ def chapters() -> list[tuple[str, list]]:
               "missing context destroys - and that whether it does is an empirical question that "
               "had not been answered for code review."),
         ("h2", "1.3 Scope of the Project"),
-        ("p", "The project builds and evaluates a pull request reviewer that detects ambiguous "
-              "intent and asks before commenting. The system targets Python repositories on "
-              "GitHub, is delivered as a bot that responds to pull request webhooks, and is "
-              "restricted to the four stages described in Chapter 4. Multi-language support, an "
-              "editor extension and any interface beyond pull request comments are out of scope "
-              "because none of them bears on the contribution."),
+        ("p", prose("report.s1_3.scope")),
         ("p", "The research scope is narrower still. Generating and explaining review comments is "
               "not claimed as novel. What is claimed is the mechanism that decides when to ask, "
               "implemented in four designs, together with empirical evidence on whether asking "
               "first changes what a reviewer understands and detects."),
-        ("p", f"The evaluation is scoped to what one student team can complete in a semester on "
-              f"free-tier model access: a two-by-three ablation over {V2['complete_triples']} "
-              f"SWE-bench Verified instances with execution-verified defects, and the tooling "
-              f"for a paired developer study. A field deployment is not attempted, which is why "
-              f"the target technology readiness level is TRL 4."),
+        ("p", prose("report.s1_3.eval_scope")),
     ]))
 
     # ---------------------------------------------------------------- 2
@@ -354,8 +335,8 @@ def chapters() -> list[tuple[str, list]]:
               "supply the basis for two of the four detectors. For scoring, LLM judges agree with "
               "human preference about as often as humans agree with each other, but show known "
               "biases, including a preference for their own output [10]; this is why the judge "
-              "here is a different model from the reviewer and is validated against human "
-              "scoring."),
+              "here is a different model family from the reviewer; it has been cross-checked "
+              "against other AI judges but not yet against human scorers."),
         ("h2", "2.2 Research Gap"),
         ("p", "LLM-based pull request review is studied extensively in industry and "
               "clarification-seeking is studied extensively in academia, but the intersection is "
@@ -380,20 +361,26 @@ def chapters() -> list[tuple[str, list]]:
          ["No.", "Objective", "Status"],
          [["O1", "Design an ambiguity-detection mechanism for pull request review and compare "
                  "designs: heuristic, trained classifier, sampling and perturbation uncertainty",
-           "Done. Four detectors built; three compared on real data (Section 7.5)"],
+           "Partly done. Four detectors built and three compared (Section 7.5); the "
+           "classifier is not yet trained"],
           ["O2", "Build a four-stage clarify-then-review pipeline deployable as a GitHub bot",
            "Done. Pipeline, bot and CLI implemented and tested"],
           ["O3", "Construct an evaluation set from SWE-bench Verified with execution-verified "
                  "defective variants",
            f"Done. {MUT['by_status']['verified']} verified mutants; {V2['complete_triples']}-row "
-           f"study set"],
+           f"v2 study set and {D3['rows']}-row v3 set"],
           ["O4", "Run a 2 x 3 ablation and report the share of the ambiguity gap that "
                  "clarification recovers",
-           f"Done. Gap recovery {ia['gap_recovery']:.2f} (Chapter 7)"],
+           f"Done (v2 and v3 local). Gap recovery {ia['gap_recovery']:.2f} on v2 and "
+           f"{fixed(V3['tests']['intent_all']['gap_recovery'], 2)} on v3 (Chapter 7)"],
           ["O5", "Run a paired blind developer study of usefulness and trust",
            "Tooling built (blind study page, analysis); sessions require participants"],
           ["O6", "Produce a TRL 4 prototype and a paper for a Scopus-indexed conference",
-           "Done. Prototype at TRL 4; conference paper prepared"]],
+           "Done. Prototype at TRL 4; conference paper prepared"],
+          ["O7", f"Collect real pull requests in {numword(len(RP['languages']))} languages "
+                 "for human labelling",
+           f"Collected ({RP['n_prs']} pull requests, {RP['n_repos']} repositories); not yet "
+           "labelled"]],
          [0.5, 3.6, 2.5]),
         ("h2", "2.4 Problem Statement"),
         ("p", "Existing LLM-based pull request reviewers infer developer intent from the diff in "
@@ -477,22 +464,18 @@ def chapters() -> list[tuple[str, list]]:
         ("h2", "3.2 Feasibility Study"),
         ("h3", "3.2.1 Technical Feasibility"),
         ("p", "Every component relies on established technology: the GitHub API for pull request "
-              "data, Python's standard ast module for symbol extraction, scikit-learn for the "
-              "trained detector, SQLite for the experiment log and a hosted LLM API for "
-              "generation. No component needs a GPU, because no model is trained beyond a small "
-              "classifier over fifteen features."),
+              "data, Python's ast module and tree-sitter grammars for symbol extraction, "
+              "scikit-learn for the trained detector, SQLite for the experiment log and either a "
+              "hosted or a local LLM for generation. No component requires a GPU, because no "
+              "model is trained beyond a small classifier over fifteen features; a GPU is "
+              "optional, for running the reviewer locally."),
         ("p", "The principal technical risk was verifying injected defects, which requires "
               "running each benchmark repository's tests. It was resolved without the "
               "containerised SWE-bench harness: sympy's tests were run in a local Python 3.9 "
               f"environment, yielding {MUT['by_status']['verified']} verified mutants from "
               f"{MUT['attempted']} instances (Section 5.2)."),
         ("h3", "3.2.2 Economic Feasibility"),
-        ("p", "The only recurring cost is model usage. The whole study ran on the Google Gemini "
-              "free tier at zero monetary cost (Section 7.7). The binding constraint is a "
-              "per-day request quota applied per model, which the design accommodates by "
-              "assigning roles to different models, committing results per instance, and "
-              "resuming after a reset. No hardware, licence or dataset was purchased; all "
-              "libraries are open source."),
+        ("p", prose("report.s3_2_2.economic")),
         ("h3", "3.2.3 Social Feasibility"),
         ("p", "The system is designed around the concern that would prevent adoption: an "
               "over-eager questioner is more irritating than an occasional wrong guess, so "
@@ -508,23 +491,33 @@ def chapters() -> list[tuple[str, list]]:
            "Diff parsing, symbol extraction, running repository test suites"],
           ["Memory (RAM)", "16 GB", "Repository checkouts during defect verification"],
           ["Storage", "20 GB free", "Benchmark checkouts, test environment, experiment log"],
-          ["GPU", "Not required", "All language model inference is hosted"],
+          ["GPU", "Optional; the local (v3) run used an RTX 3050 laptop GPU",
+           "Local reviewer inference through Ollama; hosted inference needs none"],
           ["Network", "Broadband", "GitHub API and model API calls"]],
          [1.4, 2.4, 2.8]),
         ("h3", "3.3.2 Software Specification"),
         ("table", "Table 3.2 Software specification",
          ["Category", "Selection", "Role in the system"],
-         [["Operating system", "macOS 14+ or Ubuntu 22.04+", "Development and evaluation host"],
+         [["Operating system", "macOS 14+, Ubuntu 22.04+ or Windows 11",
+           "Development and evaluation host (the v3 run and the bot tests ran on Windows 11)"],
           ["Language", "Python 3.11+ (3.9 for sympy test execution)",
            "Entire system and harness"],
           ["Review model", "Google gemini-3.5-flash-lite (free tier)",
            "Stage 4 review generation; uncertainty-detector sampling"],
-          ["Question, oracle, judge", "Google gemma-4-31b-it (free tier)",
-           "Clarifying questions, simulated author, independent judge"],
+          ["Question, oracle, judge (v2)", "Google gemma-4-31b-it (free tier)",
+           "Clarifying questions, simulated author, API judge"],
           ["Alternative backend", "Anthropic Claude API",
            "Second provider behind the same interface"],
-          ["LLM SDKs", "google-genai, anthropic", "Provider access"],
-          ["Code analysis", "Python ast; tree-sitter (optional)", "Semantic diffing"],
+          ["Local backend", f"Ollama, {S3['reviewer_model_name']}",
+           "Reviewer for the v3 replication; no network, no cost"],
+          ["Question and oracle (v3)", f"{S3['question_oracle_model']} via Ollama",
+           "Clarifying questions and simulated author in the v3 replication"],
+          ["Judges", f"{J['models']['api_v2']} (v2 API judge); Claude Sonnet agents; Gemini "
+                     f"web app ({J['gemini_sample']['n']}-run sample)",
+           "Scoring and AI-vs-AI calibration (Section 7.9)"],
+          ["LLM clients", "google-genai, anthropic, httpx (Ollama)", "Provider access"],
+          ["Code analysis", "Python ast; tree-sitter grammars for JavaScript, TypeScript, Java, "
+                            "C, C++ and Rust", "Semantic diffing"],
           ["Machine learning", "scikit-learn, NumPy, SciPy",
            "Classifier, dispersion measures, statistics"],
           ["Web framework", "FastAPI, Uvicorn", "GitHub App webhook receiver"],
@@ -606,7 +599,8 @@ def chapters() -> list[tuple[str, list]]:
     # ---------------------------------------------------------------- 5
     module_rows = [
         ["Ingestion", "ingest/diff.py, semantic.py, context.py, builder.py",
-         "Diff parsing, AST symbol resolution, deterministic context and fingerprint"],
+         "Diff parsing, symbol resolution (Python AST; tree-sitter for six more languages), "
+         "deterministic context and fingerprint"],
         ["Detection", "detect/heuristic.py, classifier.py, uncertainty.py, features.py",
          "Four detectors behind one interface; fifteen-feature extractor"],
         ["Clarification", "clarify/question.py, loop.py",
@@ -615,24 +609,65 @@ def chapters() -> list[tuple[str, list]]:
         ["Review", "review/generator.py, render.py",
          "Structured findings; markdown rendering"],
         ["Pipeline", "pipeline.py", "Composes the stages; builds the three conditions"],
-        ["LLM layer", "llm/client.py, providers/gemini_backend.py, anthropic_backend.py",
-         "Provider-independent facade; retries, timeouts, quota handling, JSON recovery"],
-        ["GitHub bot", "gh/app.py, client.py", "Webhook receiver and API client"],
-        ["Storage", "store/db.py", "SQLite experiment log"],
+        ["LLM layer", "llm/client.py, providers/gemini_backend.py, anthropic_backend.py, "
+                      "ollama_backend.py",
+         "Provider-independent facade over Gemini, Anthropic and local Ollama; retries, "
+         "timeouts, quota handling, JSON recovery"],
+        ["GitHub bot", "gh/app.py, client.py, auth.py, settings.py",
+         "Signed-webhook receiver, API client, durable parked-run handling"],
+        ["Storage", "store/db.py", "SQLite experiment log; parked runs, posted reviews, "
+                                   "webhook deliveries"],
         ["CLI", "cli.py", "ingest, detect, review, replay, models, serve"],
         ["Benchmark", "experiments/build_dataset.py, build_study_set.py, mutate.py, "
-                      "verify_mutants.py",
-         "Instance selection, mutation operators, execution verification"],
+                      "verify_mutants.py, fetch_prs.py",
+         "Instance selection, mutation operators, execution verification; real pull request "
+         "fetching for the labelling set"],
         ["Ablation", "experiments/strip.py, oracle.py, run_matrix.py",
          "Intent stripping, simulated author, 2 x 3 runner"],
-        ["Scoring", "experiments/judge.py, analyze.py, compare_detectors.py",
-         "LLM judge, statistics, detector comparison"],
+        ["Scoring", "experiments/judge.py, external_judge.py, analyze.py, compare_detectors.py",
+         "LLM judge, external-judge export, import and comparison, statistics, detector "
+         "comparison"],
         ["Human studies", "experiments/label_tool.py, study/",
          "Labelling sheet and agreement; blind developer-study page"],
         ["Reporting", "paper/collect.py, build_paper.js, docs/",
          "Numbers, figures, paper and this report, generated from the log"],
     ]
-    test_rows = [[name, str(n), TEST_PURPOSE.get(name, "")] for name, n in test_counts()]
+    test_desc = {
+        "test_diff.py": "Unified diff parsing and hunk arithmetic",
+        "test_semantic.py": "Line-to-symbol resolution and signature changes",
+        "test_types.py": "Context fingerprint determinism and schema limits",
+        "test_features.py": "Feature extraction from diffs",
+        "test_heuristic.py": "Ask on ambiguous, proceed on clear changes",
+        "test_uncertainty.py": "Dispersion and entropy scoring",
+        "test_pipeline.py": "Baseline equivalence, timeout fallback, fault isolation",
+        "test_llm_policy.py": "Model roles, provider rules, independent judge",
+        "test_providers.py": "Gemini/Anthropic backends, retries, quota, timeouts",
+        "test_store.py": "Experiment log round-trip and cascades",
+        "test_experiments.py": "Stripping, mutation, statistics, oracle isolation",
+        "test_tooling.py": "Judge agreement, oracle audit, sweeps, replay",
+        "test_cli_encoding.py": "CLI output survives a legacy Windows code page",
+        "test_collect_v3.py": "Judge-copy helper and collection of the v3 numbers",
+        "test_external_judge.py": "External-judge export, import, comparison, re-analysis",
+        "test_features_polyglot.py": "Feature extraction beyond Python; Python invariance snapshot",
+        "test_fetch_prs.py": "Real pull request fetching against a fake GitHub API",
+        "test_finish.py": "Result-file plumbing for the human steps",
+        "test_gh_client.py": "GitHub API client against a mock transport",
+        "test_gh_webhook_e2e.py": "Live bot end to end: signed webhooks, parking, timeouts, replay",
+        "test_judge_context.py": "Judge context renders findings and ground truth",
+        "test_judge_study_prep.py": "Judge-validation and developer-study preparation",
+        "test_labelling_prep.py": "Labelling-set preparation; never writes a label",
+        "test_ollama_backend.py": "Ollama backend against a mock transport",
+        "test_prose.py": "Prose placeholders: formats, fail-loud rule, ids kept in step",
+        "test_parked_store.py": "Durable bot state: parked runs, posted reviews, deliveries",
+        "test_semantic_polyglot.py": "Symbol extraction for six further languages",
+        "test_study_set_superset.py": "The v3 study set contains the v2 set",
+    }
+    test_rows = []
+    for path, count in N["tests_by_file"].items():
+        name = path.rsplit("/", 1)[-1]
+        if name not in test_desc:  # a new test file must get a description here
+            raise KeyError(f"no description for {name} in report_content.test_desc")
+        test_rows.append([name, str(count), test_desc[name]])
     ch.append(("METHODOLOGY AND TESTING", [
         ("h2", "5.1 Module Description"),
         ("p", f"The implementation comprises {loc['src']:,} lines in the core package, "
@@ -641,10 +676,9 @@ def chapters() -> list[tuple[str, list]]:
         ("table", "Table 5.1 Modules of the implementation", ["Module", "Files", "Responsibility"],
          module_rows, [1.2, 2.6, 2.8]),
         ("h3", "5.1.1 Ingestion"),
-        ("p", "The diff parser reads unified diffs into hunks with exact line arithmetic. The "
-              "semantic layer parses the post-change file with the Python AST and maps each "
-              "changed line to its enclosing function, method or class, recording whether the "
-              "signature changed. The context builder orders every section deterministically and "
+        ("p", "The diff parser reads unified diffs into hunks with exact line arithmetic. "
+              + prose("report.s5_1_1.extraction") +
+              " The context builder orders every section deterministically and "
               "computes a SHA-256 fingerprint, which the ablation uses to prove that two "
               "conditions saw the same input."),
         ("h3", "5.1.2 Ambiguity detectors"),
@@ -666,7 +700,9 @@ def chapters() -> list[tuple[str, list]]:
               "per-minute 429 errors are retried with exponential backoff and jitter, a per-day "
               "quota error fails fast so retries do not burn quota, requests time out after "
               "180 s, malformed JSON is recovered and re-validated, and the model that actually "
-              "served each call is recorded."),
+              "served each call is recorded. " + prose("report.s5_1_4.ollama")),
+        ("h3", "5.1.5 GitHub bot"),
+        ("p", prose("report.s5_1_5.bot")),
         ("h2", "5.2 Evaluation Methodology"),
         ("h3", "5.2.1 Study design"),
         ("p", "Each instance is reviewed in three conditions by the same reviewer model with the "
@@ -691,8 +727,10 @@ def chapters() -> list[tuple[str, list]]:
         ("fig", "fig10_mutants.png", "Figure 5.2 Yield of execution-verified mutants on sympy",
          5.6),
         ("h3", "5.2.4 Instance selection"),
-        ("p", f"The study set has {N['v2_design']['rows']} rows: twelve sympy instances reviewed "
-              "both as the golden patch and as its verified mutant, and twelve further golden "
+        ("p", f"The study set has {N['v2_design']['rows']} rows: "
+              f"{numword(N['v2_design']['arms']['mutant/mutant'])} sympy instances reviewed "
+              f"both as the golden patch and as its verified mutant, and "
+              f"{numword(N['v2_design']['arms']['golden/golden'])} further golden "
               "patches from xarray, sphinx, astropy, django, pylint, pytest and scikit-learn. "
               "Instances were chosen hardest-first by SWE-bench's own difficulty annotation, an "
               "attribute assigned by the benchmark's annotators rather than by our detector, so "
@@ -705,16 +743,19 @@ def chapters() -> list[tuple[str, list]]:
               "scored by an LLM judge from a different model family than the reviewer, on three "
               "checklist questions: was the intent recovered, was the injected defect caught, "
               "and was a false alarm raised on correct code."),
+        ("p", prose("report.s5_2_5.calibration")),
         ("h3", "5.2.6 Statistical analysis"),
         ("p", "Paired binary outcomes are compared with McNemar's exact test [12] and gap "
               "recovery is reported with a bootstrap confidence interval. Agreement between "
               "human scorers and the judge, and between the two labellers of the classifier's "
               "training set, is measured with Cohen's kappa [13] and read on the Landis-Koch "
               "scale [14]."),
+        ("h3", "5.2.7 Replication on a local reviewer (v3)"),
+        ("p", prose("report.s5_2_7.v3_design")),
         ("h2", "5.3 Testing"),
-        ("p", f"The system is covered by {N_TESTS} automated tests in {len(test_counts())} files "
-              "(Table 5.2), "
-              "all of which run offline in about two seconds. Tests were written for the "
+        ("p", f"The system is covered by {N_TESTS} automated tests in {numword(N_TEST_FILES)} "
+              f"files (Table 5.2), all of which run offline in about "
+              f"{numword(DV['tests_seconds'])} seconds. Tests were written for the "
               "properties the study's validity rests on, not only for function behaviour: "
               "determinism of ingestion, byte-identical prompts between baseline and treatment, "
               "that the oracle never sees the diff, and that prose stripping never alters code."),
@@ -741,13 +782,16 @@ def chapters() -> list[tuple[str, list]]:
           ["Model returned JSON with leading whitespace", "Valid reviews rejected",
            "Recover and re-validate against the schema"]],
          [2.6, 2.0, 2.0]),
-        ("p", "Writing end-to-end tests for the GitHub bot against a fake GitHub found three "
-              "further defects in its webhook path, all fixed: a reply resumed the review but the "
-              "log recorded the run as never having asked; a pull request whose author never "
-              "replied waited indefinitely instead of being reviewed at the timeout; and when "
-              "the bot ran under the author's own token, it read its own question as the "
-              "answer. The fixes replay the recorded detector decision on resumption, schedule "
-              "a timeout for every parked run, and ignore every comment the bot itself posted."),
+        ("p", "End-to-end tests of the GitHub bot against a fake GitHub, driven through "
+              "signed webhooks, found further defects in its webhook path, all fixed: a reply "
+              "resumed the review but the log recorded the run as never having asked; a pull "
+              "request whose author never replied waited indefinitely; running under the "
+              "author's own token, the bot read its own question as the answer; and a failure "
+              "to generate the question left the pull request with no review. Parked runs now "
+              "persist in SQLite and survive restarts, a sweep finishes them at the timeout, "
+              "hidden markers identify every comment the bot posts, the recorded detector "
+              "decision is replayed on resumption, and a failed question falls back to a "
+              "single-pass review that says why."),
     ]))
 
     # ---------------------------------------------------------------- 6
@@ -758,7 +802,12 @@ def chapters() -> list[tuple[str, list]]:
         ("code", "$ git clone <repository> && cd clarifyReview\n"
                  "$ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'\n"
                  "$ ./demo.sh            # all four stages, offline, about ten seconds\n"
-                 "$ ./demo.sh --full     # Stages 3-4 live; needs GEMINI_API_KEY",
+                 "$ ./demo.sh --full     # Stages 3-4 live; needs GEMINI_API_KEY\n"
+                 "\n"
+                 "# Windows (PowerShell)\n"
+                 "> python -m venv .venv; .venv\\Scripts\\pip install -e \".[dev]\"\n"
+                 "> .\\demo.ps1           # same demonstration, offline\n"
+                 "> .\\demo.ps1 -Full     # Stages 3-4 live; needs GEMINI_API_KEY",
          "Listing 6.1 Running the demonstration"),
         ("h2", "6.1 Stages 1 and 2: ask, and knowing when not to"),
         ("p", "The first pull request removes a null check, has no linked issue and the commit "
@@ -789,11 +838,16 @@ def chapters() -> list[tuple[str, list]]:
               "timeout after which it reviews anyway and marks the review low-confidence. "
               "clarifyreview review runs the same pipeline from the command line on a local diff "
               "or a live pull request."),
+        ("p", prose("report.s6_3.status")),
     ]))
 
     # ---------------------------------------------------------------- 7
     pc = V2["per_condition"]
-    tok_in = 187121
+    tk = N["v2_tokens"]
+    pc3 = V3["per_condition"]
+    t3 = V3["tests"]
+    ia3, dm3, fa3 = t3["intent_all"], t3["defect_mutant"], t3["false_alarm_golden"]
+    ia_n, ig_n, im_n = ia["n"], T["intent_golden"]["n"], T["intent_mutant"]["n"]
     ch.append(("RESULT AND DISCUSSION", [
         ("h2", "7.1 Pilot Run and the Design Correction"),
         ("p", f"A pilot on 2 September 2026 ran the ablation over {N['pilot']['attempted']} "
@@ -812,18 +866,20 @@ def chapters() -> list[tuple[str, list]]:
               f"{V2['judged']} reviews were judged (Table 7.1, Figure 7.1)."),
         ("table", "Table 7.1 Judged outcomes of the main study (manipulation version 2)",
          ["Measure", "Floor", "Treatment", "Ceiling", "McNemar p"],
-         [["Intent recovered, all (n = 36)", frac(ia["floor"], 36), frac(ia["treatment"], 36),
-           frac(ia["ceiling"], 36), f"{ia['mcnemar_p']:.2f}"],
-          ["Intent recovered, golden (n = 24)", frac(T["intent_golden"]["floor"], 24),
-           frac(T["intent_golden"]["treatment"], 24), frac(T["intent_golden"]["ceiling"], 24),
+         [[f"Intent recovered, all (n = {ia_n})", frac(ia["floor"], ia_n),
+           frac(ia["treatment"], ia_n), frac(ia["ceiling"], ia_n), f"{ia['mcnemar_p']:.2f}"],
+          [f"Intent recovered, golden (n = {ig_n})", frac(T["intent_golden"]["floor"], ig_n),
+           frac(T["intent_golden"]["treatment"], ig_n), frac(T["intent_golden"]["ceiling"], ig_n),
            f"{T['intent_golden']['mcnemar_p']:.2f}"],
-          ["Intent recovered, mutant (n = 12)", frac(T["intent_mutant"]["floor"], 12),
-           frac(T["intent_mutant"]["treatment"], 12), frac(T["intent_mutant"]["ceiling"], 12),
+          [f"Intent recovered, mutant (n = {im_n})", frac(T["intent_mutant"]["floor"], im_n),
+           frac(T["intent_mutant"]["treatment"], im_n), frac(T["intent_mutant"]["ceiling"], im_n),
            f"{T['intent_mutant']['mcnemar_p']:.2f}"],
-          ["Defect caught (12 mutants)", frac(dm["floor"], 12), frac(dm["treatment"], 12),
-           frac(dm["ceiling"], 12), f"{dm['mcnemar_p']:.2f}"],
-          ["False alarm (24 golden)", frac(fa["floor"], 24), frac(fa["treatment"], 24),
-           frac(fa["ceiling"], 24), f"{fa['mcnemar_p']:.2f}"],
+          [f"Defect caught ({dm['n']} mutants)", frac(dm["floor"], dm["n"]),
+           frac(dm["treatment"], dm["n"]), frac(dm["ceiling"], dm["n"]),
+           f"{dm['mcnemar_p']:.2f}"],
+          [f"False alarm ({fa['n']} golden)", frac(fa["floor"], fa["n"]),
+           frac(fa["treatment"], fa["n"]), frac(fa["ceiling"], fa["n"]),
+           f"{fa['mcnemar_p']:.2f}"],
           ["Mean latency per review", f"{pc['stripped_plain']['ms'] / 1000:.1f} s",
            f"{pc['stripped_clarify']['ms'] / 1000:.1f} s", f"{pc['full_plain']['ms'] / 1000:.1f} s",
            "-"]],
@@ -833,8 +889,10 @@ def chapters() -> list[tuple[str, list]]:
               f"{pct(ia['ceiling'])} to {pct(ia['floor'])}: the version 2 manipulation opened a "
               f"gap where version 1 opened none. Clarification raised recovery to "
               f"{pct(ia['treatment'])}, a gap recovery of {ia['gap_recovery']:.2f} with a 95% "
-              f"bootstrap interval of {ia['gap_ci'][0]:.2f} to {ia['gap_ci'][1]:.2f}. One pair "
-              f"favoured the treatment and none the floor (McNemar p = {ia['mcnemar_p']:.2f}). "
+              f"bootstrap interval of {ia['gap_ci'][0]:.2f} to {ia['gap_ci'][1]:.2f}. "
+              f"{pairs(ia['discordant_treatment_better'])} "
+              f"favoured the treatment and {pairs(ia['discordant_floor_better'], False)} the floor "
+              f"(McNemar p = {ia['mcnemar_p']:.2f}). "
               "The effect is in the hypothesised direction and is not statistically significant; "
               "at this sample size it could not have been, because only pairs where the "
               "detector asked can differ for a reason other than sampling variation."),
@@ -857,10 +915,12 @@ def chapters() -> list[tuple[str, list]]:
               "answer once given. This is the most actionable result of the study, because it "
               "says which component to improve next."),
         ("h2", "7.4 Defect Detection"),
-        ("p", f"The reviewer caught {frac(dm['floor'], 12)} injected defects at the floor, "
-              f"{frac(dm['treatment'], 12)} with clarification and {frac(dm['ceiling'], 12)} with "
+        ("p", f"The reviewer caught {frac(dm['floor'], dm['n'])} injected defects at the floor, "
+              f"{frac(dm['treatment'], dm['n'])} with clarification and "
+              f"{frac(dm['ceiling'], dm['n'])} with "
               "full context. The full-context figure is the informative one: with the issue in "
-              "hand, the reviewer still approved eleven of twelve broken patches. On this "
+              f"hand, the reviewer still approved {numword(DV['v2_defect_ceiling_missed'])} of "
+              f"{numword(dm['n'])} broken patches. On this "
               "reviewer model, the limit on defect detection is reading the code, not knowing "
               "the intent, and clarification cannot lift detection above that ceiling. One "
               "mutant was caught without the issue text and approved with it - a single case, "
@@ -880,7 +940,8 @@ def chapters() -> list[tuple[str, list]]:
         ("fig", "fig9_detectors.png", "Figure 7.3 Mean detector score by context", 5.6),
         ("p", "The heuristic is perfectly precise and misses most ambiguous cases - the recall "
               "limit traced in Section 7.3. The uncertainty detectors cost eight model calls per "
-              "decision and were therefore run on four instances only. At their default "
+              f"decision and were therefore run on {numword(DV['uncertainty_instances'])} instances only. "
+              "At their default "
               "thresholds both asked on every decision. Sampling dispersion did separate the "
               "conditions, and re-sweeping its recorded scores suggests a threshold near 0.60 "
               "would have separated them almost perfectly; because those scores come from the "
@@ -902,35 +963,97 @@ def chapters() -> list[tuple[str, list]]:
          ["Item", "Quantity"],
          [["Reviews generated and judged", f"{V2['runs_ok']}"],
           ["Clarifying exchanges (question + answer)", f"{V2['treatment_asks']}"],
-          ["Reviewer input tokens", f"{tok_in:,}"],
-          ["Reviewer output tokens", "9,138"],
-          ["Implicitly cached input tokens", "16,339"],
+          ["Reviewer input tokens", f"{tk['input']:,}"],
+          ["Reviewer output tokens", f"{tk['output']:,}"],
+          ["Implicitly cached input tokens", f"{tk['cache_read']:,}"],
           ["Monetary cost (Gemini free tier)", "US$ 0.00"],
-          ["Detector cost per decision", "heuristic: 0 calls, 0.1 ms; uncertainty: 8 calls, "
-                                         "31-45 s"],
-          ["Added latency when the detector asks", "about 3 minutes, dominated by provider "
-                                                    "retries and hidden reasoning"]],
+          ["Detector cost per decision",
+           f"heuristic: 0 calls, {DET['heuristic']['mean_ms']} ms; uncertainty: 8 calls, "
+           f"{DV['uncertainty_s_min']}-{DV['uncertainty_s_max']} s"],
+          ["Added latency when the detector asks",
+           f"about {numword(DV['v2_asked_latency_minutes'])} minutes, dominated by provider "
+           "retries and hidden reasoning"]],
          [3.4, 3.2]),
         ("p", "The study cost nothing in money; its real cost was quota and time. A per-day "
               "request quota applied per model was the binding constraint throughout, which is "
               "why roles were spread across two model families. A clarification round added "
-              "about three minutes to the asked instances, almost all of it waiting on provider "
+              f"about {numword(DV['v2_asked_latency_minutes'])} minutes to the asked instances, "
+              "almost all of it waiting on provider "
               "retries and the question and answer models' hidden reasoning; the heuristic "
-              "detector itself adds a tenth of a millisecond. On a paid key the same run would be "
+              f"detector itself adds {DET['heuristic']['mean_ms']} ms. On a paid key the same "
+              "run would be "
               "priced by the token counts above and the provider's published rates, which the "
               "configuration holds in one table."),
-        ("h2", "7.8 Threats to Validity"),
+        ("h2", "7.8 Replication on a Local Reviewer (v3)"),
+        ("p", prose("report.s7_8.setup")),
+        ("table", "Table 7.4 Judged outcomes of the local replication (v3, agent judge)",
+         ["Measure", "Floor", "Treatment", "Ceiling", "McNemar p"],
+         [[f"Intent recovered, all (n = {ia3['n']})", frac(ia3["floor"], ia3["n"]),
+           frac(ia3["treatment"], ia3["n"]), frac(ia3["ceiling"], ia3["n"]),
+           fixed(ia3["mcnemar_p"], 2)],
+          [f"Intent recovered, golden (n = {t3['intent_golden']['n']})",
+           frac(t3["intent_golden"]["floor"], t3["intent_golden"]["n"]),
+           frac(t3["intent_golden"]["treatment"], t3["intent_golden"]["n"]),
+           frac(t3["intent_golden"]["ceiling"], t3["intent_golden"]["n"]),
+           fixed(t3["intent_golden"]["mcnemar_p"], 2)],
+          [f"Intent recovered, mutant (n = {t3['intent_mutant']['n']})",
+           frac(t3["intent_mutant"]["floor"], t3["intent_mutant"]["n"]),
+           frac(t3["intent_mutant"]["treatment"], t3["intent_mutant"]["n"]),
+           frac(t3["intent_mutant"]["ceiling"], t3["intent_mutant"]["n"]),
+           fixed(t3["intent_mutant"]["mcnemar_p"], 2)],
+          [f"Defect caught ({dm3['n']} mutants)", frac(dm3["floor"], dm3["n"]),
+           frac(dm3["treatment"], dm3["n"]), frac(dm3["ceiling"], dm3["n"]),
+           fixed(dm3["mcnemar_p"], 2)],
+          [f"False alarm ({fa3['n']} golden)", frac(fa3["floor"], fa3["n"]),
+           frac(fa3["treatment"], fa3["n"]), frac(fa3["ceiling"], fa3["n"]),
+           fixed(fa3["mcnemar_p"], 2)],
+          ["Mean latency per review", f"{pc3['stripped_plain']['ms'] / 1000:.1f} s",
+           f"{pc3['stripped_clarify']['ms'] / 1000:.1f} s",
+           f"{pc3['full_plain']['ms'] / 1000:.1f} s", "-"]],
+         [2.4, 0.95, 1.0, 0.95, 1.0]),
+        ("fig", "fig15_v3_results.png", "Figure 7.4 Outcomes by condition in the local replication",
+         6.3),
+        ("p", prose("report.s7_8.effect")),
+        ("fig", "fig18_v3_funnel.png",
+         "Figure 7.5 Tracing each v3 instance from floor miss to recovery", 6.0),
+        ("p", prose("report.s7_8.funnel")),
+        ("p", prose("report.s7_8.defects")),
+        ("h2", "7.9 Judge Calibration"),
+        ("p", prose("report.s7_9.lead")),
+        ("table", "Table 7.5 Agreement between AI judges (percent agreement / kappa / n)",
+         ["Pair", "Intent recovered", "Defect caught", "False alarm"],
+         [[label] + [f"{pct(pair[m]['percent_agreement'])} / {fixed(pair[m]['kappa'], 2)} / "
+                     f"{pair[m]['n']}"
+                     for m in ("intent_recovered", "defect_caught", "false_alarm")]
+          for label, pair in (
+              (f"v2: {J['models']['api_v2']} vs Claude agent", J["v2_pairs"]["api_vs_agent"]),
+              ("v2: Gemini web app vs Claude agent", J["v2_pairs"]["gemini_vs_agent"]),
+              (f"v2: Gemini web app vs {J['models']['api_v2']}", J["v2_pairs"]["gemini_vs_api"]),
+              (f"v3: {J['models']['api_v3']} vs Claude agent", J["v3_pairs"]["llama_vs_agent"]))],
+         [2.4, 1.4, 1.4, 1.4]),
+        ("fig", "fig16_judges.png", "Figure 7.6 Cohen's kappa between pairs of AI judges", 5.6),
+        ("p", prose("report.s7_9.v2")),
+        ("p", prose("report.s7_9.v3")),
+        ("fig", "fig17_judge_robustness.png",
+         "Figure 7.7 Gap recovery under each judge, with 95% intervals", 5.6),
+        ("p", prose("report.s7_9.robust")),
+        ("h2", "7.10 Threats to Validity"),
         ("bullets", [
-            "Sample size: 36 instances under free-tier quotas; intervals are wide and the "
-            "intent result is not significant.",
-            "Judge: an LLM judge has not yet been validated against human scoring; the stratified "
-            "sample and agreement tooling are in place.",
+            f"Sample size: {V2['complete_triples']} instances in v2 and {V3['complete_triples']} "
+            "in v3; intervals are wide and neither intent result is significant.",
+            "Judge: not validated against human scoring; cross-checked against two other AI "
+            "judges (Section 7.9). The stratified sample and agreement tooling for human "
+            "scoring are in place.",
             "Simulated author: answers come from withheld text only, but leakage needs the hand "
             "audit the tooling prepares; the prompt deviation is reported.",
             "Mutants: all verified mutants come from sympy and the operators produce simple "
             "defects, which may be easier or harder to catch than natural ones.",
-            "Reviewer: a small free-tier model; its low detection rate may not hold for "
-            "stronger reviewers.",
+            "Reviewer: small models (a free-tier hosted model in v2, a 4B local model in v3); "
+            "their low detection rate may not hold for stronger reviewers.",
+            prose("report.s7_10.post_hoc"),
+            prose("report.s7_10.oracle"),
+            prose("report.s7_10.new_rows"),
+            prose("report.s7_10.bot"),
         ]),
     ]))
 
@@ -939,7 +1062,8 @@ def chapters() -> list[tuple[str, list]]:
         ("p", "This project built ClarifyReview, a pull request reviewer that decides before "
               "critiquing whether it understands what a change is for, and asks the author when "
               "it does not. The system is complete: four pipeline stages, four interchangeable "
-              f"detectors, two provider backends, a GitHub bot, and a benchmark harness covered "
+              f"detectors, three provider backends (Gemini, Anthropic and local Ollama), a GitHub bot, "
+              "and a benchmark harness covered "
               f"by {N_TESTS} automated tests, at technology readiness level 4."),
         ("p", "The evaluation produced three findings. First, evaluating this idea on golden "
               "patches requires withholding more than the linked issue, because well-written "
@@ -950,12 +1074,19 @@ def chapters() -> list[tuple[str, list]]:
               "clarification succeeded where it was given the chance and that the limit is the "
               "detector's recall. Third, defect detection was low even with full context, so on "
               "this reviewer the bottleneck for catching defects is the reviewer, not the intent."),
+        ("p", prose("report.conclusion.v3")),
         ("h2", "8.1 Future Work"),
         ("bullets", [
             "Raise detector recall: train the classifier on the 300-PR labelled set and freeze "
             "the sampling detector's threshold on a development split, then repeat the ablation.",
-            "Validate the judge against two human scorers and complete the oracle leakage audit.",
+            "Validate the judge against two human scorers (AI-vs-AI calibration is done) and "
+            "complete the oracle leakage audit.",
+            f"Label the {RP['n_prs']} collected real pull requests ({RP['n_repos']} repositories, "
+            f"{numword(len(RP['languages']))} languages); none has been labelled yet.",
             "Run the paired blind developer study of perceived usefulness and trust.",
+            "Deploy the bot against live GitHub; it has so far been exercised end to end only "
+            "on a local server.",
+            f"Run the Gemini reviewer on the {D3['n_new_rows']} rows that only the v3 set contains.",
             "Repeat the study at a larger scale and with a stronger reviewer model on a paid key.",
             "Extend mutant verification beyond sympy and to more realistic defect types.",
         ]),
@@ -978,7 +1109,7 @@ APPENDIX_FILES = [
 def appendix_snippets() -> list[tuple[str, str]]:
     out = []
     for title, path, start, n in APPENDIX_FILES:
-        lines = (ROOT / path).read_text().splitlines()
+        lines = (ROOT / path).read_text(encoding="utf-8").splitlines()
         i = next(k for k, line in enumerate(lines) if line.startswith(start))
         out.append((title + f"  ({path})", "\n".join(lines[i:i + n]).rstrip()))
     return out

@@ -51,9 +51,20 @@ function rev(r,label){
   h+= r.findings.length? r.findings.map(f=>`<div class="f">&bull; [${esc(f.sev)}/${esc(f.cat)}] ${esc(f.where)} &mdash; ${esc(f.claim)}</div>`).join("") : `<div class="f muted">No findings reported.</div>`;
   return h+"</div>";
 }
+const safeName=p=>String(p).trim().replace(/[^A-Za-z0-9_-]+/g,"_")||"anon";
+const storeKey=p=>"cr_study_"+p;
+function saveState(pid,yrs){try{const st={yrs,v:{}};
+  document.querySelectorAll("#items input[type=radio]:checked").forEach(e=>st.v[e.name]=e.value);
+  document.querySelectorAll("#items textarea").forEach(e=>{if(e.value)st.v[e.name]=e.value});
+  localStorage.setItem(storeKey(pid),JSON.stringify(st))}catch(e){}}
+function loadState(pid){try{return JSON.parse(localStorage.getItem(storeKey(pid))||"null")}catch(e){return null}}
+function restoreState(st){if(!st)return;
+  document.querySelectorAll("#items input[type=radio]").forEach(e=>{if(st.v[e.name]===e.value)e.checked=true});
+  document.querySelectorAll("#items textarea").forEach(e=>{if(st.v[e.name])e.value=st.v[e.name]})}
 function scale(name){return [1,2,3,4,5].map(v=>`<label><input type="radio" name="${name}" value="${v}" required> ${v}</label>`).join("")}
 document.getElementById("go").onclick=()=>{
-  const pid=document.getElementById("pid").value, yrs=document.getElementById("yrs").value;
+  const pid=document.getElementById("pid").value.trim(); let yrs=document.getElementById("yrs").value;
+  const saved=pid?loadState(pid):null; if(yrs===""&&saved&&saved.yrs!=null)yrs=saved.yrs;
   if(!pid||yrs===""){alert("Please enter your participant code and experience.");return}
   const order=[...ITEMS].sort((a,b)=>fnv1a(pid+"#"+a.id)-fnv1a(pid+"#"+b.id));
   document.getElementById("start").classList.add("hidden");
@@ -70,6 +81,10 @@ document.getElementById("go").onclick=()=>{
       <label><input type="radio" name="${k+L}a" value="0"> no</label>
       <textarea name="${k+L}w" placeholder="Why? (optional)"></textarea></fieldset>`).join("")}</div>`}).join("")
     + `<button id="finish">Finish</button>`;
+  restoreState(saved);
+  const items=document.getElementById("items");
+  items.addEventListener("change",()=>saveState(pid,yrs));items.addEventListener("input",()=>saveState(pid,yrs));
+  window.__pid=pid;
   document.getElementById("finish").onclick=()=>{
     const rows=[["participant","years","item","label","usefulness","trust","would_act","why"]];
     let missing=0;
@@ -85,6 +100,6 @@ document.getElementById("go").onclick=()=>{
 };
 document.getElementById("dl").onclick=()=>{
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([window.__csv],{type:"text/csv"}));
-  a.download="clarifyreview_responses.csv";a.click();
+  a.download=`clarifyreview_responses_${safeName(window.__pid)}.csv`;a.click();
 };
 </script></main></body></html>

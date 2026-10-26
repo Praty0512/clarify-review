@@ -16,4 +16,9 @@ def build_backend(provider: str | None = None) -> Backend:
         from .anthropic_backend import AnthropicBackend
 
         return AnthropicBackend()
-    raise ValueError(f"unknown provider: {name!r} (expected 'gemini' or 'anthropic')")
+    if name == "ollama":
+        from .ollama_backend import OllamaBackend
+
+        return OllamaBackend()
+    raise ValueError(
+        f"unknown provider: {name!r} (expected 'gemini', 'anthropic' or 'ollama')")

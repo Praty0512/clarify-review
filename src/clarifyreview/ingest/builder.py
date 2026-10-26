@@ -13,7 +13,7 @@ from pathlib import Path
 from ..types import LinkedIssue, PRContext
 from .context import build_neighbourhood, estimate_tokens
 from .diff import parse_unified_diff, reconstruct_sides, split_by_file
-from .semantic import changed_symbols
+from .semantic import changed_symbols, language_of
 
 DIFF_TOKEN_BUDGET = 24000
 NEIGHBOURHOOD_TOKEN_BUDGET = 6000
@@ -106,9 +106,14 @@ def from_github(client, repo: str, number: int, repo_root: Path | None = None) -
 
 
 def _lang(path: str) -> str:
-    return {"py": "python", "js": "javascript", "ts": "typescript", "go": "go"}.get(
-        path.rsplit(".", 1)[-1] if "." in path else "", ""
-    )
+    """Display name of a file's language ("" when unsupported). TSX reports as
+    typescript; Go is labelled for the prompt only, it has no symbol extractor."""
+    lang = language_of(path)
+    if lang == "tsx":
+        return "typescript"
+    if lang:
+        return lang
+    return "go" if path.endswith(".go") else ""
 
 
 def _read_file(root: Path | None, rel: str) -> str | None:

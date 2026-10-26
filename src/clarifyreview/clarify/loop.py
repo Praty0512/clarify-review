@@ -41,7 +41,9 @@ class GitHubResponder:
     Polling rather than resuming from the webhook keeps this callable
     synchronously from the CLI. The webhook path in `gh/app.py` handles the
     long-lived case, where a run is parked and revived by an `issue_comment`
-    event days later.
+    event days later. Its question carries the bot marker, which
+    `find_reply_after` skips, so a bot running as the PR author cannot answer
+    itself.
     """
 
     name = "github"
@@ -54,11 +56,11 @@ class GitHubResponder:
         self.poll_s = poll_s
 
     def ask(self, ctx: PRContext, questions: ClarifyingQuestions) -> str | None:
-        from ..review.render import render_questions
+        from ..review.render import QUESTION_MARKER, render_questions
 
         exchange = ClarificationExchange(questions=questions)
         comment = self._client.post_comment(
-            self.repo, self.number, render_questions(exchange)
+            self.repo, self.number, render_questions(exchange, marker=QUESTION_MARKER)
         )
         comment_id = comment.get("id")
         author = self._client.get_pull_request(self.repo, self.number).get("user", {}).get(

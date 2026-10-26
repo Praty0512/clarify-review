@@ -201,6 +201,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--stop-on-quota", action="store_true", default=True,
                     help="stop the run at the first exhausted daily quota rather than "
                          "recording a failure for every remaining instance")
+    ap.add_argument("--stop-on-unavailable", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="with CLARIFYREVIEW_PROVIDER=ollama: stop at the first "
+                         "instance that fails because the server is down or the "
+                         "model is not pulled, instead of failing every remaining "
+                         "instance (use --no-stop-on-unavailable to keep going)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -282,6 +288,14 @@ def main(argv: list[str] | None = None) -> int:
                 original_commit_msg="\n".join(inst.commit_messages),
                 tests_verified=int(inst.variant == "mutant"),
             )
+            if args.stop_on_unavailable and any(
+                    r.error and r.error.startswith(("OllamaUnavailable", "OllamaModelNotFound"))
+                    for r in runs):
+                bad = next(r.error for r in runs if r.error and r.error.startswith("Ollama"))
+                log.error("Ollama unavailable at %s; stopping. %s Re-run with --resume.",
+                          inst.pr_id, bad)
+                failures += 1
+                break
             quota_hit = any(r.error and "PerDay" in r.error for r in runs)
             if quota_hit and args.stop_on_quota:
                 # Do not record a half-finished instance; --resume will redo it.

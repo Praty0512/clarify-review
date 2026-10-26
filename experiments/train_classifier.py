@@ -40,7 +40,7 @@ def load_labelled(path: Path) -> tuple[list[PRContext], list[int]]:
     """
     contexts: list[PRContext] = []
     labels: list[int] = []
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
         row = json.loads(line)
@@ -121,6 +121,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", default=None, help="where to write the .joblib")
     ap.add_argument("--sweep-thresholds", action="store_true")
     ap.add_argument("--thresholds-out", default=None)
+    ap.add_argument("--report-out", default=None,
+                    help="write thresholds, dev sweep and split sizes as JSON")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -152,6 +154,7 @@ def main(argv: list[str] | None = None) -> int:
     det = ClassifierDetector()
     det._pipeline = pipeline  # noqa: SLF001 - fit() returns the fitted pipeline
     out_path = Path(args.out) if args.out else cfg.classifier_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     det.save(out_path)
     log.info("saved classifier to %s", out_path)
 
@@ -175,6 +178,15 @@ def main(argv: list[str] | None = None) -> int:
     Thresholds(thresholds, source=str(tpath)).save(tpath)
     log.info("froze thresholds to %s: %s", tpath, thresholds)
     print(json.dumps({"thresholds": thresholds, "dev_sweep": sweeps}, indent=2))
+    if args.report_out:
+        report = {
+            "thresholds": thresholds, "dev_sweep": sweeps,
+            "n_labels": len(labels), "n_ambiguous": int(sum(labels)),
+            "train": {"n": len(train_y), "n_ambiguous": int(sum(train_y))},
+            "dev": {"n": len(dev_y), "n_ambiguous": int(sum(dev_y))},
+        }
+        Path(args.report_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.report_out).write_text(json.dumps(report, indent=2), encoding="utf-8")
     log.warning(
         "sampling and perturbation thresholds are still at their defaults - they "
         "need API calls to sweep. Run experiments/sweep_uncertainty.py on the same "

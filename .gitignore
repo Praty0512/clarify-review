@@ -5,6 +5,8 @@ __pycache__/
 data/*.db
 # The completed study log is the paper's raw data and the offline demo's source.
 !data/study_v2.db
+!data/study_v2_external.db
+!data/study_v3_ollama.db
 data/cache/
 data/models/*.joblib
 runs/

@@ -3,9 +3,9 @@
 Reads only paper/numbers.json, the experiment log and the demo output, so a
 re-run after any new experiment regenerates figures that agree with the text.
 
-    .venv/bin/pip install -e '.[docs]'
-    .venv/bin/python -m paper.collect
-    .venv/bin/python docs/figures/make_figures.py
+    pip install -e ".[docs]"          # inside the project's virtual environment
+    python -m paper.collect
+    python docs/figures/make_figures.py
 
 The design figures from Review 2 (Gantt, architecture, DFD, use case, class,
 sequence) are static and live alongside these as fig1_* to fig6_*.
@@ -14,9 +14,12 @@ sequence) are static and live alongside these as fig1_* to fig6_*.
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 import matplotlib
@@ -27,7 +30,7 @@ from matplotlib.patches import FancyBboxPatch  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = Path(__file__).resolve().parent
-N = json.loads((ROOT / "paper/numbers.json").read_text())
+N = json.loads((ROOT / "paper/numbers.json").read_text(encoding="utf-8"))
 
 NAVY, ORANGE, GREEN, GREY, LIGHT = "#1F3864", "#C55A11", "#375623", "#7F7F7F", "#D9E2F3"
 COND = [("stripped_plain", "Floor\n(intent withheld)", GREY),
@@ -49,16 +52,19 @@ def _save(fig, name: str) -> None:
 
 # ------------------------------------------------------------- results
 
-def fig_results() -> None:
-    t = N["v2"]["tests"]
+def fig_results(study_key: str = "v2", name: str = "fig7_results.png",
+                inset: bool = False) -> None:
+    """Three panels (intent, defect, false alarm). n comes from the data, not the title."""
+    t = N[study_key]["tests"]
     panels = [
-        ("Intent recovered\n(all 36 instances)", t["intent_all"], 36),
-        ("Injected defect caught\n(12 verified mutants)", t["defect_mutant"], 12),
-        ("False alarm raised\n(24 correct patches)", t["false_alarm_golden"], 24),
+        ("Intent recovered\n(all {n} instances)", t["intent_all"]),
+        ("Injected defect caught\n({n} verified mutants)", t["defect_mutant"]),
+        ("False alarm raised\n({n} correct patches)", t["false_alarm_golden"]),
     ]
     key = {"stripped_plain": "floor", "stripped_clarify": "treatment", "full_plain": "ceiling"}
     fig, axes = plt.subplots(1, 3, figsize=(10, 3.4))
-    for ax, (title, d, n) in zip(axes, panels):
+    for ax, (title, d) in zip(axes, panels):
+        n = d["n"]
         vals = [d[key[c]] * 100 for c, _, _ in COND]
         bars = ax.bar(range(3), vals, color=[c for _, _, c in COND], width=0.62)
         for b, v in zip(bars, vals):
@@ -68,15 +74,20 @@ def fig_results() -> None:
         ax.set_ylim(0, 125)
         ax.set_yticks([0, 25, 50, 75, 100])
         ax.set_ylabel("% of instances")
-        ax.set_title(title, fontsize=10)
+        ax.set_title(title.format(n=n), fontsize=10)
+        if inset and d is t["intent_all"]:
+            lo, hi = d["gap_ci"]
+            ax.text(0.03, 0.97, f"G = {d['gap_recovery']:.2f}\n95% CI {lo:.2f} to {hi:.2f}\n"
+                    f"p = {d['mcnemar_p']:.2f}", transform=ax.transAxes, va="top",
+                    fontsize=7.8, bbox=dict(fc="white", ec=GREY, lw=0.6, pad=2.5))
     fig.tight_layout()
-    _save(fig, "fig7_results.png")
+    _save(fig, name)
 
 
-def fig_funnel() -> None:
-    f = N["v2"]["funnel"]
+def fig_funnel(study_key: str = "v2", name: str = "fig8_funnel.png") -> None:
+    f = N[study_key]["funnel"]
     steps = [
-        ("Instances reviewed in all three conditions", N["v2"]["complete_triples"], GREY),
+        ("Instances reviewed in all three conditions", N[study_key]["complete_triples"], GREY),
         ("Floor failed to recover intent", f["floor_misses"], NAVY),
         ("... and the detector asked", f["detector_asked"], ORANGE),
         ("... and the author answered", f["author_answered"], ORANGE),
@@ -94,7 +105,7 @@ def fig_funnel() -> None:
     ax.spines["left"].set_visible(False)
     ax.set_xlabel("instances")
     ax.set_title("Where the clarification effect is lost", loc="left")
-    _save(fig, "fig8_funnel.png")
+    _save(fig, name)
 
 
 def fig_detectors() -> None:
@@ -176,6 +187,73 @@ def fig_design() -> None:
     _save(fig, "fig11_design.png")
 
 
+# ------------------------------------------------- judges (v3 additions)
+
+_METRICS = [("intent_recovered", "Intent recovered"), ("defect_caught", "Defect caught"),
+            ("false_alarm", "False alarm")]
+
+
+def fig_judges() -> None:
+    """Kappa between pairs of AI judges. AI-vs-AI agreement, not human validation."""
+    from matplotlib.colors import LinearSegmentedColormap
+
+    J = N["judges"]
+    rows = [("v2: gemma-4-31b-it vs\nClaude agent", J["v2_pairs"]["api_vs_agent"]),
+            ("v2: Gemini web vs\nClaude agent (sample)", J["v2_pairs"]["gemini_vs_agent"]),
+            ("v2: Gemini web vs\ngemma-4-31b-it (sample)", J["v2_pairs"]["gemini_vs_api"]),
+            ("v3: llama3.2:3b vs\nClaude agent", J["v3_pairs"]["llama_vs_agent"])]
+    cmap = LinearSegmentedColormap.from_list("kappa", [ORANGE, "#FFFFFF", NAVY])
+    fig, ax = plt.subplots(figsize=(7.6, 3.6))
+    for i, (_, pair) in enumerate(rows):
+        for j, (m, _) in enumerate(_METRICS):
+            c = pair[m]
+            k = c["kappa"]
+            ax.add_patch(plt.Rectangle((j, len(rows) - 1 - i), 1, 1, fc=cmap((k + 1) / 2),
+                                       ec="white", lw=2))
+            ax.text(j + 0.5, len(rows) - 1 - i + 0.5,
+                    f"κ {k:.2f}\n{c['percent_agreement'] * 100:.0f}% agree\nn = {c['n']}",
+                    ha="center", va="center", fontsize=8.3,
+                    color="white" if abs(k) > 0.55 else "#202020")
+    ax.set_xlim(0, len(_METRICS))
+    ax.set_ylim(0, len(rows))
+    ax.set_xticks([j + 0.5 for j in range(len(_METRICS))], [lbl for _, lbl in _METRICS],
+                  fontsize=9)
+    ax.xaxis.tick_top()
+    ax.set_yticks([len(rows) - 1 - i + 0.5 for i in range(len(rows))],
+                  [lbl for lbl, _ in rows], fontsize=8.3)
+    ax.tick_params(length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    ax.set_title("Agreement between AI judges (Cohen's κ)", loc="left", pad=26)
+    _save(fig, "fig16_judges.png")
+
+
+def fig_judge_robustness() -> None:
+    """Intent gap recovery G (95% CI) under each judge. Hatched = judge unusable."""
+    items = [("v2\ngemma-4-31b-it", N["v2"], False),
+             ("v2\nClaude agent", N["v2_agent_judge"], False),
+             ("v3\nClaude agent", N["v3_local"], False),
+             ("v3\nllama3.2:3b", N["v3_local_llama_judge"], True)]
+    fig, ax = plt.subplots(figsize=(7.2, 3.3))
+    for i, (lbl, st, bad) in enumerate(items):
+        d = st["tests"]["intent_all"]
+        g, (lo, hi) = d["gap_recovery"], d["gap_ci"]
+        if g is None:
+            continue
+        ax.bar(i, g, 0.55, color=GREY if bad else ORANGE, hatch="//" if bad else None,
+               edgecolor="white" if bad else "none",
+               label=("unreliable judge (never flagged a false alarm; kappa near 0)" if bad
+                      else ("usable judge" if i == 0 else None)))
+        ax.errorbar(i, g, yerr=[[g - lo], [hi - g]], color="black", capsize=4, lw=1)
+        ax.text(i + 0.32, g, f"{g:.2f}", fontsize=8.5, va="center")
+    ax.axhline(0, color="black", lw=0.8)
+    ax.set_xticks(range(len(items)), [lbl for lbl, _, _ in items], fontsize=8.5)
+    ax.set_ylabel("gap recovery G")
+    ax.legend(frameon=False, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.2), ncol=2)
+    ax.set_title("Effect size depends on the judge; every interval reaches zero", loc="left")
+    _save(fig, "fig17_judge_robustness.png")
+
+
 # ----------------------------------------------------------------- demo
 
 def _terminal(lines: list[str], name: str, title: str, width: float = 9.0) -> None:
@@ -213,18 +291,33 @@ def _wrap(text: str, n: int = 108) -> list[str]:
     return out
 
 
+def _cli() -> str:
+    """The project's own CLI: the venv script on Windows or POSIX, else whatever is on PATH."""
+    for cand in (ROOT / ".venv/Scripts/clarifyreview.exe", ROOT / ".venv/bin/clarifyreview",
+                 Path(sys.executable).with_name("clarifyreview.exe"),
+                 Path(sys.executable).with_name("clarifyreview")):
+        if cand.exists():
+            return str(cand)
+    found = shutil.which("clarifyreview")
+    if not found:
+        raise SystemExit("clarifyreview CLI not found: pip install -e . first")
+    return found
+
+
 def fig_demo() -> None:
-    cr = str(ROOT / ".venv/bin/clarifyreview")
+    cr = _cli()
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"}
 
     def run(*args: str) -> str:
-        res = subprocess.run([cr, *args], cwd=ROOT, capture_output=True, text=True)
+        res = subprocess.run([cr, *args], cwd=ROOT, capture_output=True, text=True,
+                             encoding="utf-8", env=env)
         return res.stdout.strip()
 
     ask = run("detect", "--diff", "examples/ambiguous.diff", "--commit-msg", "fix")
     proceed = run("detect", "--diff", "examples/clear.diff", "--commit-msg",
                   "Trim surrounding whitespace before slugifying so pasted CMS titles "
                   "do not produce trailing dashes")
-    diff = (ROOT / "examples/ambiguous.diff").read_text().strip()
+    diff = (ROOT / "examples/ambiguous.diff").read_text(encoding="utf-8").strip()
     lines = (diff.splitlines() + ["", "$ clarifyreview detect --diff examples/ambiguous.diff "
              "--commit-msg 'fix'"] + _wrap(ask) + ["", "$ clarifyreview detect --diff "
              "examples/clear.diff --commit-msg 'Trim surrounding whitespace ...'"] + _wrap(proceed))
@@ -234,8 +327,9 @@ def fig_demo() -> None:
     _terminal(_wrap(replay), "fig13_demo_replay.png",
               "$ clarifyreview replay   (recorded study run, all four stages)", width=9.6)
 
-    tests = subprocess.run([str(ROOT / ".venv/bin/python"), "-m", "pytest", "-q"], cwd=ROOT,
-                           capture_output=True, text=True).stdout.strip().splitlines()
+    tests = subprocess.run([sys.executable, "-m", "pytest", "-q"], cwd=ROOT,
+                           capture_output=True, text=True, encoding="utf-8",
+                           env=env).stdout.strip().splitlines()
     files = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
     _terminal(["$ pytest -q"] + tests[-3:] + ["", f"test files ({len(files)}):"]
               + [f"  {f}" for f in files], "fig14_tests.png", "The automated test suite",
@@ -248,6 +342,13 @@ def main() -> int:
     fig_detectors()
     fig_mutants()
     fig_design()
+    # Added for the v3 replication and the judge check; numbered after the old ones.
+    if N.get("v3_local", {}).get("available"):
+        fig_results("v3_local", "fig15_v3_results.png", inset=True)
+        fig_funnel("v3_local", "fig18_v3_funnel.png")
+    if N.get("judges", {}).get("available"):
+        fig_judges()
+        fig_judge_robustness()
     fig_demo()
     return 0
 

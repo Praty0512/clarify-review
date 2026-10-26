@@ -15,6 +15,7 @@ the judge concluded alone.
 
     python -m experiments.judge --db data/clarifyreview.db
     python -m experiments.judge --db data/clarifyreview.db --sample-for-humans 60
+    python -m experiments.judge --db data/study_v2.db --blind-copies yashika pratyaksh
 """
 
 from __future__ import annotations
@@ -66,10 +67,21 @@ class JudgeVerdict(BaseModel):
     false_alarm_reason: str = Field(description="One sentence.")
 
 
+def render_findings(review: dict) -> str:
+    """The findings list as the judge sees it; reused for the blind human copies."""
+    return (
+        "\n".join(
+            f"- [{f['severity']}/{f['category']}] {f['file']}:{f.get('line') or '?'} "
+            f"{f['claim']} (confidence {f['confidence']})"
+            for f in review.get("findings", [])
+        )
+        or "(no findings reported)"
+    )
+
+
 def build_judge_context(run_row: dict, instance_row: dict) -> str:
     payload = json.loads(run_row["payload"])
     review = payload.get("review") or {}
-    findings = review.get("findings", [])
 
     defect = (
         f"A defect WAS injected: operator `{instance_row['mutation_op']}` applied to "
@@ -78,14 +90,7 @@ def build_judge_context(run_row: dict, instance_row: dict) -> str:
         else "No defect was injected. This patch is the accepted fix and is correct."
     )
 
-    rendered_findings = (
-        "\n".join(
-            f"- [{f['severity']}/{f['category']}] {f['file']}:{f.get('line') or '?'} "
-            f"{f['claim']} (confidence {f['confidence']})"
-            for f in findings
-        )
-        or "(no findings reported)"
-    )
+    rendered_findings = render_findings(review)
 
     return (
         f"## Ground truth\n"
@@ -150,10 +155,17 @@ def score_all(db_path: Path, model: str | None = None, limit: int = 0) -> dict:
                     cached_context=build_judge_context(d, d),
                     instruction="Score this review against the ground truth.",
                     max_tokens=2000,
+                    # On Ollama, OLLAMA_THINK=off (the default) keeps a thinking
+                    # model from spending the whole num_predict budget reasoning
+                    # and returning no verdict; `thinking=True` only takes effect
+                    # with OLLAMA_THINK=on or auto.
                     thinking=True,
                 )
-            except Exception:
+            except Exception as exc:
                 log.exception("judging run %s failed", d["id"])
+                if type(exc).__name__ in ("OllamaUnavailable", "OllamaModelNotFound"):
+                    log.error("Ollama is unavailable; stopping. Re-run after fixing it.")
+                    break
                 continue
 
             v = result.value
@@ -246,16 +258,133 @@ def sample_for_humans(db_path: Path, n: int, out: Path, seed: int = 20260831) ->
     return len(sample)
 
 
+BLIND_FIELDS = [
+    "run_id", "pr_id", "has_defect", "injected_defect", "problem_statement",
+    "intent_summary", "verdict", "findings",
+    "human_intent_recovered", "human_defect_caught", "human_false_alarm", "notes",
+]
+
+BLIND_INSTRUCTIONS = """Judge validation - blind copy
+=============================
+Score every row yourself, independently of the other scorer and of the LLM judge.
+Do not discuss answers until both of you have finished.
+
+For each row fill the three human_* columns with 1 or 0:
+
+  human_intent_recovered  1 if intent_summary matches the real problem in
+                          problem_statement (different wording is fine; a vague
+                          summary that could describe any change is a 0).
+  human_defect_caught     1 only if a defect was injected (injected_defect) AND the
+                          review reports a blocking or major correctness/security/
+                          performance finding that identifies that specific defect.
+                          If injected_defect starts with "none", leave it 0.
+  human_false_alarm       1 only if NO defect was injected AND the review asserts a
+                          blocking or major correctness/security/performance problem.
+                          Style, maintainability and nit comments are never false alarms.
+
+Leave a cell blank only if you truly cannot decide; blanks are excluded, not counted
+as disagreement. The condition the review came from and the LLM judge's scores are
+deliberately not shown. Rows are in a different order for each scorer.
+
+When both files are filled:
+  python -m experiments.analyze --judge-agreement runs/judge_validation/*.csv --out runs/judge_agreement.json
+"""
+
+
+def _has_human_cells(path: Path) -> bool:
+    with path.open(newline="", encoding="utf-8-sig") as fh:
+        return any(
+            (row.get(k) or "").strip()
+            for row in csv.DictReader(fh)
+            for k in BLIND_FIELDS
+            if k.startswith("human_")
+        )
+
+
+def write_blind_copies(sample_csv: Path, db_path: Path, scorers: list[str],
+                       out_dir: Path, seed: int = 20260831) -> list[Path]:
+    """One anonymised, independently shuffled copy of the validation sample per scorer.
+
+    The shared sample shows the judge's answers and the condition next to the
+    blank human columns, which anchors the human. These copies omit condition,
+    variant and every judge_* column, and add the full problem statement, the
+    findings and the injected mutation, which the judge itself was given.
+    Refuses to overwrite a file in which any human cell is already filled.
+    """
+    csv.field_size_limit(10**8)
+    with Path(sample_csv).open(newline="", encoding="utf-8-sig") as fh:
+        run_ids = [r["run_id"] for r in csv.DictReader(fh)]
+
+    rows = []
+    with db.connect(db_path) as conn:
+        for rid in run_ids:
+            r = conn.execute(
+                """SELECT r.id, r.pr_id, r.payload, r.intent_summary, r.verdict,
+                          i.has_defect, i.mutation_op, i.mutation_target, i.problem_statement
+                   FROM runs r JOIN instances i ON i.pr_id = r.pr_id WHERE r.id = ?""",
+                (int(rid),),
+            ).fetchone()
+            if r is None:
+                raise ValueError(f"run_id {rid} from {sample_csv} is not in {db_path}")
+            review = (json.loads(r["payload"]) or {}).get("review") or {}
+            rows.append({
+                "run_id": r["id"],
+                "pr_id": r["pr_id"],
+                "has_defect": r["has_defect"],
+                "injected_defect": (f"{r['mutation_op']} on {r['mutation_target']}"
+                                    if r["has_defect"] else "none (accepted fix)"),
+                "problem_statement": r["problem_statement"] or "",
+                "intent_summary": r["intent_summary"] or review.get("intent_summary", ""),
+                "verdict": r["verdict"] or review.get("verdict", ""),
+                "findings": render_findings(review),
+                "human_intent_recovered": "", "human_defect_caught": "",
+                "human_false_alarm": "", "notes": "",
+            })
+
+    out_dir = Path(out_dir)
+    paths = [out_dir / f"{name}.csv" for name in scorers]
+    for p in paths:
+        if p.exists() and _has_human_cells(p):
+            raise FileExistsError(f"{p} already has human scores; refusing to overwrite")
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, p in zip(scorers, paths):
+        order = list(rows)
+        random.Random(f"{seed}|{name}").shuffle(order)
+        with p.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=BLIND_FIELDS)
+            w.writeheader()
+            w.writerows(order)
+    (out_dir / "INSTRUCTIONS.txt").write_text(BLIND_INSTRUCTIONS, encoding="utf-8")
+    return paths
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=None)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--sample-for-humans", type=int, default=0)
     ap.add_argument("--out", default="runs/judge_validation_sample.csv")
+    ap.add_argument("--blind-copies", nargs="+", metavar="NAME",
+                    help="write one blind, shuffled copy of the sample per scorer name")
+    ap.add_argument("--sample", default="runs/judge_validation_sample.csv")
+    ap.add_argument("--blind-dir", default="runs/judge_validation")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
     db_path = Path(args.db) if args.db else settings().clarifyreview_db
+
+    if args.blind_copies:
+        try:
+            paths = write_blind_copies(Path(args.sample), db_path, args.blind_copies,
+                                       Path(args.blind_dir))
+        except FileExistsError as e:
+            print(e)
+            return 2
+        for p in paths:
+            print(f"wrote {p}")
+        print(f"instructions: {Path(args.blind_dir) / 'INSTRUCTIONS.txt'}")
+        return 0
 
     if args.sample_for_humans:
         n = sample_for_humans(db_path, args.sample_for_humans, Path(args.out))

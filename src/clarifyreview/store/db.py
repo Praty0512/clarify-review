@@ -101,6 +101,48 @@ CREATE TABLE IF NOT EXISTS instances (
 CREATE INDEX IF NOT EXISTS idx_runs_pr        ON runs(pr_id);
 CREATE INDEX IF NOT EXISTS idx_runs_condition ON runs(condition);
 CREATE INDEX IF NOT EXISTS idx_findings_run   ON findings(run_id);
+
+-- Live bot state. Everything below survives a restart; times are unix epoch seconds.
+CREATE TABLE IF NOT EXISTS parked_runs (
+    pr_id               TEXT PRIMARY KEY,
+    repo                TEXT NOT NULL,
+    number              INTEGER NOT NULL,
+    author              TEXT,
+    head_sha            TEXT,
+    installation_id     INTEGER,
+    question_comment_id INTEGER,
+    context_json        TEXT NOT NULL,
+    decision_json       TEXT NOT NULL,
+    detector            TEXT,
+    question_cost_usd   REAL DEFAULT 0,
+    created_at          REAL NOT NULL,
+    deadline_at         REAL NOT NULL,
+    state               TEXT NOT NULL DEFAULT 'parked',  -- parked|claimed|done|cancelled|failed
+    claimed_at          REAL,
+    attempts            INTEGER DEFAULT 0,
+    last_error          TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_parked_due ON parked_runs(state, deadline_at);
+
+CREATE TABLE IF NOT EXISTS posted_reviews (
+    pr_id       TEXT,
+    head_sha    TEXT,
+    run_id      INTEGER,
+    comment_id  INTEGER,
+    created_at  REAL,
+    PRIMARY KEY (pr_id, head_sha)
+);
+
+CREATE TABLE IF NOT EXISTS webhook_deliveries (
+    delivery_id TEXT PRIMARY KEY,
+    event       TEXT,
+    repo        TEXT,
+    number      INTEGER,
+    action      TEXT,
+    received_at REAL,
+    status      TEXT,            -- received|done|failed
+    args_json   TEXT             -- handler call, so a crash mid-handling can be replayed
+);
 """
 
 
@@ -231,3 +273,220 @@ def load_runs(conn: sqlite3.Connection, condition: str | None = None) -> list[di
 
 def load_payload(row: dict) -> dict:
     return json.loads(row["payload"])
+
+
+# ----------------------------------------------------------- live bot state
+#
+# Every mutating helper commits before returning. The bot runs several short
+# connections concurrently (webhook handlers, the sweeper), and a transaction left
+# open until the connection closes would hold SQLite's single write lock for the
+# length of an LLM call.
+
+
+def park(
+    conn: sqlite3.Connection,
+    *,
+    pr_id: str,
+    repo: str,
+    number: int,
+    author: str | None,
+    head_sha: str | None,
+    installation_id: int | None,
+    comment_id: int | None,
+    ctx,
+    decision,
+    detector: str | None,
+    question_cost: float,
+    now: float,
+    deadline: float,
+) -> None:
+    """Record a run waiting for the author. Upserts: re-parking resets the row."""
+    conn.execute(
+        """
+        INSERT INTO parked_runs (
+            pr_id, repo, number, author, head_sha, installation_id,
+            question_comment_id, context_json, decision_json, detector,
+            question_cost_usd, created_at, deadline_at, state
+        ) VALUES (?,?,?,?,?,?, ?,?,?,?, ?,?,?, 'parked')
+        ON CONFLICT(pr_id) DO UPDATE SET
+            repo=excluded.repo, number=excluded.number, author=excluded.author,
+            head_sha=excluded.head_sha, installation_id=excluded.installation_id,
+            question_comment_id=excluded.question_comment_id,
+            context_json=excluded.context_json, decision_json=excluded.decision_json,
+            detector=excluded.detector, question_cost_usd=excluded.question_cost_usd,
+            created_at=excluded.created_at, deadline_at=excluded.deadline_at,
+            state='parked', claimed_at=NULL, attempts=0, last_error=NULL
+        """,
+        (
+            pr_id, repo, number, author, head_sha, installation_id, comment_id,
+            ctx.model_dump_json(), decision.model_dump_json(), detector,
+            float(question_cost or 0.0), now, deadline,
+        ),
+    )
+    conn.commit()
+
+
+def get_parked(conn: sqlite3.Connection, pr_id: str) -> dict | None:
+    """The row in whatever state it is in; callers look at `state`."""
+    row = conn.execute("SELECT * FROM parked_runs WHERE pr_id = ?", (pr_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def claim_parked(conn: sqlite3.Connection, pr_id: str, now: float) -> dict | None:
+    """Take a parked run for processing. Exactly one caller wins: the UPDATE is a
+    single atomic statement, and only the winner sees rowcount == 1."""
+    cur = conn.execute(
+        "UPDATE parked_runs SET state='claimed', claimed_at=? "
+        "WHERE pr_id=? AND state='parked'",
+        (now, pr_id),
+    )
+    conn.commit()
+    if cur.rowcount != 1:
+        return None
+    return get_parked(conn, pr_id)
+
+
+def claim_expired(
+    conn: sqlite3.Connection, now: float, limit: int = 20, stale_claim_s: float = 900.0
+) -> list[dict]:
+    """Claim runs whose deadline has passed, plus runs claimed long ago by a worker
+    that evidently died."""
+    ids = [
+        r["pr_id"]
+        for r in conn.execute(
+            "SELECT pr_id FROM parked_runs "
+            "WHERE (state='parked' AND deadline_at <= ?) "
+            "   OR (state='claimed' AND claimed_at <= ?) "
+            "ORDER BY deadline_at LIMIT ?",
+            (now, now - stale_claim_s, limit),
+        )
+    ]
+    claimed: list[dict] = []
+    for pr_id in ids:
+        cur = conn.execute(
+            "UPDATE parked_runs SET state='claimed', claimed_at=? "
+            "WHERE pr_id=? AND ((state='parked' AND deadline_at <= ?) "
+            "                OR (state='claimed' AND claimed_at <= ?))",
+            (now, pr_id, now, now - stale_claim_s),
+        )
+        conn.commit()
+        if cur.rowcount == 1:
+            row = get_parked(conn, pr_id)
+            if row:
+                claimed.append(row)
+    return claimed
+
+
+def release_parked(
+    conn: sqlite3.Connection, pr_id: str, error: str, max_attempts: int = 3
+) -> str:
+    """Give a claimed run back after a failure. After `max_attempts` it is marked
+    failed instead of being retried forever. Returns the new state."""
+    conn.execute(
+        "UPDATE parked_runs SET attempts = COALESCE(attempts, 0) + 1, last_error = ?, "
+        "claimed_at = NULL, "
+        "state = CASE WHEN COALESCE(attempts, 0) + 1 >= ? THEN 'failed' ELSE 'parked' END "
+        "WHERE pr_id = ? AND state = 'claimed'",
+        (error[:500], max_attempts, pr_id),
+    )
+    conn.commit()
+    row = get_parked(conn, pr_id)
+    return row["state"] if row else "missing"
+
+
+def finish_parked(conn: sqlite3.Connection, pr_id: str, state: str = "done") -> None:
+    conn.execute("UPDATE parked_runs SET state = ? WHERE pr_id = ?", (state, pr_id))
+    conn.commit()
+
+
+def update_parked_context(conn: sqlite3.Connection, pr_id: str, ctx, head_sha: str | None) -> bool:
+    """A push while parked: keep waiting, but review the newest code. Only touches a
+    row still waiting - never one a worker has claimed."""
+    cur = conn.execute(
+        "UPDATE parked_runs SET context_json = ?, head_sha = ? "
+        "WHERE pr_id = ? AND state = 'parked'",
+        (ctx.model_dump_json(), head_sha, pr_id),
+    )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def count_parked(conn: sqlite3.Connection) -> int:
+    return int(
+        conn.execute("SELECT COUNT(*) FROM parked_runs WHERE state='parked'").fetchone()[0]
+    )
+
+
+def record_posted_review(
+    conn: sqlite3.Connection,
+    pr_id: str,
+    head_sha: str,
+    run_id: int | None,
+    comment_id: int | None,
+    now: float,
+) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO posted_reviews (pr_id, head_sha, run_id, comment_id, created_at) "
+        "VALUES (?,?,?,?,?)",
+        (pr_id, head_sha, run_id, comment_id, now),
+    )
+    conn.commit()
+
+
+def review_posted_for(conn: sqlite3.Connection, pr_id: str, head_sha: str | None) -> bool:
+    if not head_sha:
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM posted_reviews WHERE pr_id=? AND head_sha=?", (pr_id, head_sha)
+        ).fetchone()
+        is not None
+    )
+
+
+def record_delivery(
+    conn: sqlite3.Connection,
+    delivery_id: str,
+    event: str,
+    repo: str | None,
+    number: int | None,
+    action: str | None,
+    now: float,
+    args_json: str | None = None,
+) -> bool:
+    """False if this delivery id was already seen (GitHub redelivers on request and
+    on timeouts)."""
+    cur = conn.execute(
+        "INSERT OR IGNORE INTO webhook_deliveries "
+        "(delivery_id, event, repo, number, action, received_at, status, args_json) "
+        "VALUES (?,?,?,?,?,?, 'received', ?)",
+        (delivery_id, event, repo, number, action, now, args_json),
+    )
+    if cur.rowcount != 1:
+        # A redelivery of one that failed is a retry, not a duplicate.
+        cur = conn.execute(
+            "UPDATE webhook_deliveries SET status='received', received_at=?, args_json=? "
+            "WHERE delivery_id=? AND status='failed'",
+            (now, args_json, delivery_id),
+        )
+    conn.commit()
+    return cur.rowcount == 1
+
+
+def mark_delivery(conn: sqlite3.Connection, delivery_id: str, status: str) -> None:
+    conn.execute(
+        "UPDATE webhook_deliveries SET status = ? WHERE delivery_id = ?", (status, delivery_id)
+    )
+    conn.commit()
+
+
+def pending_deliveries(conn: sqlite3.Connection, older_than: float) -> list[dict]:
+    """Deliveries accepted but never finished - the process died mid-handler."""
+    return [
+        dict(r)
+        for r in conn.execute(
+            "SELECT * FROM webhook_deliveries WHERE status='received' AND received_at <= ? "
+            "AND args_json IS NOT NULL ORDER BY received_at",
+            (older_than,),
+        )
+    ]

@@ -132,3 +132,30 @@ def test_gemini_free_tier_costs_nothing():
 def test_unknown_model_costs_zero_rather_than_raising():
     """A missing price must not take down an experiment run."""
     assert cost_usd("some-future-model", input_tokens=1000) == 0.0
+
+
+# ------------------------------------------------------------------ ollama
+
+def test_ollama_has_all_five_roles_and_no_latest_tag():
+    from clarifyreview.config import PRICING
+
+    roles = MODELS["ollama"]
+    assert set(roles) == {"review", "question", "judge", "oracle", "sampling"}
+    for model in roles.values():
+        assert ":" in model and not model.endswith(":latest"), model
+        assert PRICING[model] == (0.0, 0.0)
+        assert accepts_temperature(model)
+
+
+def test_ollama_settings_validate():
+    from clarifyreview.config import Settings
+
+    cfg = Settings(clarifyreview_provider="ollama")
+    assert cfg.api_key() == "ollama"
+    assert cfg.model_for("review") == MODELS["ollama"]["review"]
+    assert cfg.ollama_think == "off" and cfg.ollama_num_ctx_max == 16384
+    assert Settings(clarifyreview_provider="ollama", ollama_api_key="k").api_key() == "k"
+
+
+def test_ollama_models_cost_nothing():
+    assert cost_usd("qwen3:4b-instruct-2507-q4_K_M", input_tokens=50_000, output_tokens=5_000) == 0.0

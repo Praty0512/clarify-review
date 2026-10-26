@@ -77,12 +77,42 @@ def attach_diffs(items: list[dict], instances_path: Path) -> None:
     if not instances_path.exists():
         return
     diffs = {}
-    for line in instances_path.read_text().splitlines():
+    for line in instances_path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             row = json.loads(line)
             diffs[row["pr_id"]] = row["diff"]
     for it in items:
         it["diff"] = diffs.get(it["id"], it["diff"])[:6000]
+
+
+def render(db_path: Path, instances_path: Path, n: int = 16) -> str | None:
+    """The page `main` would write, or None when the database has no complete pairs."""
+    items = select_items(db_path, n)
+    attach_diffs(items, instances_path)
+    if not items:
+        return None
+    page = (HERE / "template.html").read_text(encoding="utf-8")
+    return page.replace("/*ITEMS*/[]", json.dumps(items))
+
+
+def _items_of(page: str) -> str | None:
+    start = page.find("const ITEMS = ")
+    end = page.find(";\nfunction fnv1a", start)
+    return page[start:end] if start >= 0 and end > start else None
+
+
+def is_current(db: Path, instances: Path, html: Path, n: int = 16) -> bool:
+    """True when `html` holds exactly the items a fresh build from `db` would select.
+
+    Compares the embedded item list only, so edits to the template's script do not
+    make a study that is already out with participants look stale.
+    """
+    html, db, instances = Path(html), Path(db), Path(instances)
+    if not (html.exists() and db.exists()):
+        return False
+    fresh = render(db, instances, n)
+    have = _items_of(html.read_text(encoding="utf-8"))
+    return fresh is not None and have is not None and have == _items_of(fresh)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -95,12 +125,11 @@ def main(argv: list[str] | None = None) -> int:
 
     items = select_items(Path(args.db), args.n)
     attach_diffs(items, Path(args.instances))
-    if not items:
+    page = render(Path(args.db), Path(args.instances), args.n)
+    if page is None:
         print("no complete stripped_plain/stripped_clarify pairs in", args.db)
         return 1
-    page = (HERE / "template.html").read_text()
-    page = page.replace("/*ITEMS*/[]", json.dumps(items))
-    Path(args.out).write_text(page)
+    Path(args.out).write_text(page, encoding="utf-8")
     print(f"wrote {args.out} with {len(items)} items "
           f"({sum(1 for i in items if i['clarify']['exchange'])} where a question was asked)")
     return 0
