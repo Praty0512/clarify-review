@@ -316,7 +316,7 @@ function humanParas() {
   const out = [];
   if (HL) {
     const thr = HT ? ` Thresholds were frozen on a development split of these labels (${HT.n_labels} labelled, ${HT.n_ambiguous} ambiguous) before any threshold-dependent evaluation; note that Study A itself ran with the default thresholds.` : "";
-    out.push(P(`Human labelling. Two annotators independently labelled ${HL.n} pull requests as clear or unclear from the code change alone; Cohen's κ ${cite("cohen")} was ${f2(HL.kappa)} (${HL.reading}, observed agreement ${pct(HL.observed_agreement)}). The ${HL.n_disagree} disagreements were resolved by adjudication; adjudicators could consult an automatic heuristic suggestion, which is a weak aid and not a label.${thr}`));
+    out.push(P(`Human labelling. Two annotators independently labelled ${HL.n} pull requests as clear or unclear from the code change alone; Cohen's κ ${cite("cohen")} was ${f2(HL.kappa)} (${HL.reading}, observed agreement ${pct(HL.observed_agreement)}). ${HL.n_adjudicated_by_ai ? `The ${HL.n_disagree} disagreements were adjudicated by an AI model (${HL.adjudicated_by}) applying the same codebook, at the authors' request; these ${HL.n_adjudicated_by_ai} labels are therefore not human judgements.` : `The ${HL.n_disagree} disagreements were resolved by adjudication; adjudicators could consult an automatic heuristic suggestion, which is a weak aid and not a label.`}${thr}`));
   }
   if (HB) {
     const u = HB.usefulness || {}, t = HB.trust || {}, w = HB.would_act || {};

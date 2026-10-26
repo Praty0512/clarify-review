@@ -194,6 +194,13 @@ def human_results(root: Path = ROOT) -> dict:
         out["labelling"] = {"available": True} | {
             k: rep.get(k) for k in ("n", "kappa", "observed_agreement", "reading", "n_rows",
                                     "n_disagree", "n_adjudicated", "n_written", "diff_source")}
+        # Who settled the disagreements. When it was not the annotators themselves the
+        # paper must say so; the log is written by whoever adjudicated.
+        log = _load_json(root / "runs/labelling/adjudication_log.json")
+        if isinstance(log, dict) and log.get("adjudicator"):
+            out["labelling"]["adjudicated_by"] = log["adjudicator"]
+            out["labelling"]["n_adjudicated_by_ai"] = (
+                log.get("n_adjudicated") if "AI" in log["adjudicator"] else 0)
     else:
         out["labelling"] = {"available": False}
 
@@ -464,6 +471,27 @@ def v3_local_block(root: Path) -> dict:
     return out
 
 
+def v3_gemini_block(root: Path) -> dict:
+    """The v3 study set (96 rows, every verified mutant) on the main reviewer.
+
+    Same reviewer, question, oracle and judge models as v2, so it is the v2
+    design at the full v3 size rather than a second-model replication. Only
+    complete triples enter the paired tests, as everywhere else.
+    """
+    db = root / "data/study_v3_gemini.db"
+    if not db.exists():
+        return {"available": False}
+    out = study(db)
+    conn = _ro_conn(db)
+    try:
+        out["review_models"] = sorted(r["m"] for r in q(
+            conn, "SELECT DISTINCT model m FROM runs WHERE error IS NULL") if r["m"])
+    finally:
+        conn.close()
+    out["judge_model"] = _one_model(db, API_LABEL)
+    return out
+
+
 def v3_llama_judge_block(root: Path) -> dict:
     """Reference only: the v3 run scored by its own (llama3.2:3b) judge."""
     db = root / "data/study_v3_ollama.db"
@@ -676,6 +704,7 @@ def main(root: Path = ROOT, check: bool = True) -> int:
     # Second-model replication and judge calibration (AI-vs-AI, never "human").
     nums["v3_local"] = v3_local_block(root)
     nums["v3_local_llama_judge"] = v3_llama_judge_block(root)
+    nums["v3_gemini"] = v3_gemini_block(root)
     nums["v3_design"] = v3_design(root, nums["mutants"]["by_status"].get("verified"))
     nums["v3_setup"] = v3_setup(root / "data/study_v3_ollama.db", root)
     nums["v2_agent_judge"] = study_with_judge(root / "data/study_v2_external.db", AGENT_LABEL)

@@ -1,0 +1,6 @@
+{
+  "classifier": 0.95,
+  "heuristic": 0.65,
+  "perturbation": 0.35,
+  "sampling": 0.35
+}

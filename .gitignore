@@ -7,6 +7,7 @@ data/*.db
 !data/study_v2.db
 !data/study_v2_external.db
 !data/study_v3_ollama.db
+!data/study_v3_gemini.db
 data/cache/
 data/models/*.joblib
 runs/
