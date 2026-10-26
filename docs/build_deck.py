@@ -497,7 +497,11 @@ def build(template: Path, out: Path) -> None:
     pres.save(out)
 
 
-def export_pdf(path: Path) -> Path:
+def export_pdf(path: Path) -> Path | None:
+    if sys.platform == "win32":
+        from office_pdf import export_pdf_windows
+
+        return export_pdf_windows(path)
     pdf = path.with_suffix(".pdf")
     script = f'''
     tell application "Microsoft PowerPoint"
@@ -523,7 +527,9 @@ def main(argv=None) -> int:
     build(Path(args.template).expanduser(), out)
     print("wrote", out)
     if not args.no_pdf:
-        print("wrote", export_pdf(out))
+        pdf = export_pdf(out)
+        if pdf:
+            print("wrote", pdf)
     return 0
 
 

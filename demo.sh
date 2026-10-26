@@ -4,11 +4,47 @@
 #   ./demo.sh          Stages 1 and 2 live, Stages 3 and 4 replayed from the
 #                      study log. No API key, no network, no cost.
 #   ./demo.sh --full   Adds Stages 3 and 4. Needs GEMINI_API_KEY.
+#   ./demo.sh --step   Pause for Enter between sections (for presenting).
+#                      Flags can be combined.
 set -u
-CR="${CR:-.venv/bin/clarifyreview}"
-FULL=0; [ "${1:-}" = "--full" ] && FULL=1
+FULL=0; STEP=0
+for a in "$@"; do
+  case "$a" in --full) FULL=1 ;; --step) STEP=1 ;; esac
+done
 
-hr()  { printf '\n\033[1;34m%s\033[0m\n' "── $* ──────────────────────────────────────"; }
+# Auto-detect the venv layout: .venv/bin (macOS/Linux) or .venv/Scripts (Windows).
+if [ -z "${CR:-}" ]; then
+  if   [ -x .venv/bin/clarifyreview ];         then CR=.venv/bin/clarifyreview
+  elif [ -f .venv/Scripts/clarifyreview.exe ]; then CR=.venv/Scripts/clarifyreview.exe
+  fi
+fi
+if [ -z "${PY:-}" ]; then
+  if   [ -x .venv/bin/python ];         then PY=.venv/bin/python
+  elif [ -f .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe
+  fi
+fi
+if [ -z "${CR:-}" ] || [ -z "${PY:-}" ]; then
+  echo "No virtualenv found. Set it up first: python -m venv .venv && .venv/bin/pip install -e . (Windows: .venv\Scripts\pip)" >&2
+  exit 1
+fi
+export PYTHONIOENCODING=utf-8
+
+# True if GEMINI_API_KEY is non-empty in the environment or .env (never printed).
+have_key() {
+  [ -n "${GEMINI_API_KEY:-}" ] && return 0
+  [ -f .env ] && grep -Eq '^[[:space:]]*(export[[:space:]]+)?GEMINI_API_KEY[[:space:]]*=[[:space:]]*["'"'"']?[^"'"'"'[:space:]#]' .env
+}
+
+SECTIONS=0
+pause() {
+  SECTIONS=$((SECTIONS + 1))
+  if [ "$STEP" = "1" ] && [ "$SECTIONS" -gt 1 ]; then
+    printf '\n\033[2m[press Enter to continue]\033[0m'; read -r _ || true; printf '\n'
+  fi
+  return 0
+}
+
+hr()  { pause; printf '\n\033[1;34m%s\033[0m\n' "── $* ──────────────────────────────────────"; }
 say() { printf '\033[2m%s\033[0m\n' "$*"; }
 cmd() { printf '\033[1;33m$ %s\033[0m\n\n' "$*"; eval "$*"; }
 
@@ -31,6 +67,11 @@ say "A tool that asks on every PR is unusable, so this case matters as much."
 printf '\n'; cat examples/clear.diff
 cmd "$CR detect --diff examples/clear.diff --commit-msg 'Trim surrounding whitespace before slugifying so pasted CMS titles do not produce trailing dashes'"
 
+if [ "$FULL" = "1" ] && ! have_key; then
+  say "--full needs GEMINI_API_KEY (not set in the environment or .env); falling back to the offline replay."
+  FULL=0
+fi
+
 if [ "$FULL" = "1" ]; then
   hr "5. Stages 3 and 4 — the full pipeline"
   say "Generates a clarifying question, then reviews. Needs GEMINI_API_KEY."
@@ -44,5 +85,5 @@ else
 fi
 
 hr "6. The evidence underneath"
-cmd ".venv/bin/python -m pytest -q 2>&1 | tail -3"
+cmd "$PY -m pytest -q 2>&1 | tail -3"
 printf '\n'

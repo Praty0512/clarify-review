@@ -589,7 +589,11 @@ def build(template: Path, out: Path, pages: dict[str, str]) -> Writer:
 
 # ---------------------------------------------------------- page numbers
 
-def export_pdf(docx_path: Path) -> Path:
+def export_pdf(docx_path: Path) -> Path | None:
+    if sys.platform == "win32":
+        from office_pdf import export_pdf_windows
+
+        return export_pdf_windows(docx_path)
     pdf = docx_path.with_suffix(".pdf")
     script = f'''
     tell application "Microsoft Word"
@@ -643,12 +647,17 @@ def main(argv=None) -> int:
     if args.no_pdf:
         print("wrote", out, "(no page numbers)")
         return 0
-    pages = locate_pages(export_pdf(out), w)
+    first_pdf = export_pdf(out)
+    if first_pdf is None:
+        print("wrote", out, "(no page numbers: no PDF export available)")
+        return 0
+    pages = locate_pages(first_pdf, w)
     missing = [k for k, v in pages.items() if not v]
     w = build(template, out, pages)
     pdf = export_pdf(out)
     print("wrote", out)
-    print("wrote", pdf)
+    if pdf:
+        print("wrote", pdf)
     if missing:
         print("could not locate:", missing)
     return 0
