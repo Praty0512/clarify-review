@@ -20,9 +20,22 @@ dependencies = [
 # Heavier, only needed for specific stages.
 bench = ["datasets>=2.19"]              # SWE-bench Verified loading
 embed = ["sentence-transformers>=2.7"]  # better embeddings for detector (a)
-polyglot = ["tree-sitter>=0.22", "tree-sitter-python>=0.21"]
+# Symbol extraction for JavaScript, TypeScript/TSX, Java, C, C++ and Rust. Tested:
+# tree-sitter 0.25.2, python 0.25.0, javascript 0.25.0, typescript 0.23.2,
+# java 0.23.5, rust 0.24.2, c 0.24.2, cpp 0.23.4 (Windows, Python 3.13).
+polyglot = [
+    "tree-sitter>=0.23,<0.26",
+    "tree-sitter-python>=0.23,<1",
+    "tree-sitter-javascript>=0.23,<1",
+    "tree-sitter-typescript>=0.23,<1",
+    "tree-sitter-java>=0.23,<1",
+    "tree-sitter-rust>=0.23,<1",
+    "tree-sitter-c>=0.23,<1",
+    "tree-sitter-cpp>=0.23,<1",
+]
+app = ["pyjwt[crypto]>=2.8"]            # GitHub App authentication for the live bot
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
-docs = ["matplotlib>=3.8", "python-docx>=1.1", "python-pptx>=0.6.23", "pymupdf>=1.24"]  # report, deck and figures
+docs = ["matplotlib>=3.8", "python-docx>=1.1", "python-pptx>=0.6.23", "pymupdf>=1.24", "pywin32>=306; sys_platform == 'win32'"]  # report, deck and figures
 
 [project.scripts]
 clarifyreview = "clarifyreview.cli:main"

@@ -10,7 +10,9 @@ rows, not 200,000.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
+from ..ingest.semantic import language_of
 from ..types import PRContext
 
 FEATURE_NAMES: tuple[str, ...] = (
@@ -63,8 +65,123 @@ _SENSITIVE = re.compile(
     r"open|read|write|delete|unlink|subprocess|os\.system)\b",
     re.IGNORECASE,
 )
-_TEST_FILE = re.compile(r"(^|/)(tests?|spec)/|(^|/)test_[^/]*\.py$|_test\.(py|go|js|ts)$|"
-                        r"\.(test|spec)\.(js|ts|tsx)$")
+_TEST_FILE = re.compile(
+    r"(^|/)(tests?|spec)/|(^|/)test_[^/]*\.py$|_test\.(py|go|js|ts)$|"
+    r"\.(test|spec)\.(js|ts|tsx)$|"
+    # JavaScript / TypeScript
+    r"(^|/)__tests__/[^/]*\.(js|jsx|ts|tsx|mjs|cjs)$|"
+    r"\.(test|spec)\.(jsx|mjs|cjs|mts|cts)$|"
+    # Java
+    r"(^|/)src/test/|(Test|Tests|IT)\.java$|"
+    # C / C++
+    r"_(unit)?test\.(cc|cpp|cxx|c)$|(^|/)test_[^/]*\.(c|cc|cpp|cxx|h)$"
+)
+
+
+# ------------------------------------------------------------ other languages
+#
+# The regexes above are applied to every changed line, whatever the file. For
+# non-Python files we additionally apply a small per-language rule set to the
+# +/- lines of that language's files only, and OR the result in. A Python-only
+# PR never reaches this code path, so its features are exactly what they were.
+
+
+@dataclass(frozen=True)
+class _LangRules:
+    guard_call: re.Pattern
+    guard_shape: re.Pattern
+    error: re.Pattern
+    sensitive: re.Pattern
+
+
+_LANG_RULES: dict[str, _LangRules] = {
+    "js": _LangRules(
+        guard_call=re.compile(
+            r"\b(?:invariant|console\.assert|assert\w*|validate\w*|check\w*|verify\w*|"
+            r"ensure\w*|sanitiz\w*|require\w*|authorize\w*|authenticate\w*)\b",
+            re.IGNORECASE,
+        ),
+        guard_shape=re.compile(
+            r"(\bif\s*\(\s*!\s*\w)|([!=]==?\s*(?:null|undefined)\b)|"
+            r"(\b(?:null|undefined)\s*[!=]==?)|(\bthrow\b)|(\btypeof\s+[\w.]+\s*[!=]==)"
+        ),
+        error=re.compile(
+            r"\.catch\s*\(|\bPromise\.reject\b|\bnew\s+\w*Error\b|\.on\(\s*['\"]error['\"]"
+        ),
+        sensitive=re.compile(
+            r"child_process|\binnerHTML\b|dangerouslySetInnerHTML|\beval\s*\(|"
+            r"\bnew\s+Function\b|document\.(?:write|cookie)\b|\blocalStorage\b"
+        ),
+    ),
+    "java": _LangRules(
+        guard_call=re.compile(
+            r"\b(?:Objects\.requireNonNull\w*|Preconditions\.check\w+|Validate\.\w+|"
+            r"Assert\.\w+|assert|validate\w*|check\w*|verify\w*|ensure\w*|require\w*)\b"
+        ),
+        guard_shape=re.compile(
+            r"(\bif\s*\(\s*!?\s*[\w.()]+\s*(?:==|!=)\s*null\b)|(\bif\s*\(\s*!\s*\w)|"
+            r"(\bthrow\s+new\b)"
+        ),
+        error=re.compile(r"\bthrows\b|\be\.printStackTrace\b|\bOptional\.empty\b"),
+        sensitive=re.compile(
+            r"Runtime\.getRuntime|\bProcessBuilder\b|\bObjectInputStream\b|"
+            r"\bClass\.forName\b|\bMessageDigest\b|\bSecureRandom\b|\bsetAccessible\b"
+        ),
+    ),
+    "rust": _LangRules(
+        guard_call=re.compile(r"\b(?:assert|assert_eq|assert_ne|debug_assert\w*|ensure|bail)!"),
+        guard_shape=re.compile(
+            r"(\bErr\()|(\bif\s+.*\.is_(?:none|err)\(\))|(\bpanic!)|(\bunreachable!)"
+        ),
+        error=re.compile(
+            r"\.unwrap\(\)|\.expect\(|\bErr\(|\bpanic!|\?\s*[;)\].,]|\?\s*$"
+        ),
+        sensitive=re.compile(
+            r"\bunsafe\b|std::process::Command|\btransmute\b|\bfrom_raw\w*|\bget_unchecked\b"
+        ),
+    ),
+    "c": _LangRules(
+        guard_call=re.compile(
+            r"\b(?:assert|static_assert|BUG_ON|WARN_ON|[A-Z]*CHECK\w*|g_return_if_fail|"
+            r"validate\w*|verify\w*|ensure\w*)\s*\("
+        ),
+        guard_shape=re.compile(
+            r"([!=]=\s*(?:NULL|nullptr)\b)|(\b(?:NULL|nullptr)\s*[!=]=)|"
+            r"(\bif\s*\(\s*!\s*\w)|(\bthrow\b)"
+        ),
+        error=re.compile(
+            r"\berrno\b|\bgoto\s+(?:err|fail|out|cleanup)\w*|\bcatch\b|\bthrow\b|\bperror\s*\("
+        ),
+        sensitive=re.compile(
+            r"\b(?:strcpy|strcat|sprintf|vsprintf|gets|memcpy|memmove|system|popen)\s*\(|"
+            r"\bexec[lv]p?e?\s*\(|\bunsafe\b"
+        ),
+    ),
+}
+
+_LANG_GROUP = {
+    "javascript": "js", "typescript": "js", "tsx": "js",
+    "java": "java", "rust": "rust", "c": "c", "cpp": "c",
+}
+
+
+def _lang_texts(ctx: PRContext) -> dict[str, tuple[str, str]]:
+    """Added and removed text per non-Python language group present in the PR."""
+    added: dict[str, list[str]] = {}
+    removed: dict[str, list[str]] = {}
+    for h in ctx.hunks:
+        group = _LANG_GROUP.get(language_of(h.file))
+        if group is None:
+            continue
+        added.setdefault(group, []).extend(h.added)
+        removed.setdefault(group, []).extend(h.removed)
+    return {g: ("\n".join(added[g]), "\n".join(removed[g])) for g in added}
+
+
+def _lang_removes_guard(rules: _LangRules, added: str, removed: str) -> bool:
+    if set(rules.guard_call.findall(removed)) - set(rules.guard_call.findall(added)):
+        return True
+    return len(rules.guard_shape.findall(removed)) > len(rules.guard_shape.findall(added))
 
 
 def extract(ctx: PRContext) -> dict[str, float]:
@@ -74,6 +191,8 @@ def extract(ctx: PRContext) -> dict[str, float]:
 
     n_added = sum(len(h.added) for h in ctx.hunks)
     n_removed = sum(len(h.removed) for h in ctx.hunks)
+
+    by_lang = _lang_texts(ctx)
 
     commit_text = " ".join(ctx.commit_messages).strip()
     generic = bool(ctx.commit_messages) and all(
@@ -89,11 +208,18 @@ def extract(ctx: PRContext) -> dict[str, float]:
         "commit_msg_len": float(len(commit_text)),
         "commit_msg_generic": float(generic or not commit_text),
         "pr_body_len": float(len(ctx.body or "")),
-        "removes_guard": float(_removes_guard(added, removed)),
+        "removes_guard": float(
+            _removes_guard(added, removed)
+            or any(_lang_removes_guard(_LANG_RULES[g], a, r) for g, (a, r) in by_lang.items())
+        ),
         "touches_public_symbol": float(any(s.is_public for s in ctx.changed_symbols)),
         "signature_changed": float(any(s.signature_changed for s in ctx.changed_symbols)),
         "modifies_error_handling": float(
             bool(_ERROR_HANDLING.search(added) or _ERROR_HANDLING.search(removed))
+            or any(
+                _LANG_RULES[g].error.search(a) or _LANG_RULES[g].error.search(r)
+                for g, (a, r) in by_lang.items()
+            )
         ),
         # Removed code counts as much as added: deleting an auth check touches
         # security-sensitive code just as surely as writing one. The file path
@@ -103,6 +229,10 @@ def extract(ctx: PRContext) -> dict[str, float]:
             any(_SENSITIVE.search(s.name) for s in ctx.changed_symbols)
             or any(_SENSITIVE.search(f) for f in ctx.files_touched)
             or bool(_SENSITIVE.search(added) or _SENSITIVE.search(removed))
+            or any(
+                _LANG_RULES[g].sensitive.search(a) or _LANG_RULES[g].sensitive.search(r)
+                for g, (a, r) in by_lang.items()
+            )
         ),
         "files_touched": float(len(ctx.files_touched)),
         "net_lines": float(n_added - n_removed),
