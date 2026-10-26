@@ -5,8 +5,8 @@ and slide numbers; extra slides (a second literature slide, a second results
 slide and a demonstration slide) are copies of template slides. Text and
 numbers come from report_content.py, so the deck and the report agree.
 
-    .venv/bin/python docs/build_deck.py --template "<Review 3 template.pptx>" \\
-        --out ~/Downloads/ClarifyReview_Review3/ClarifyReview_Review3.pptx
+    python docs/build_deck.py --template "<Review 3 template.pptx>" \\
+        --out ~/Downloads/ClarifyReview_Review3/ClarifyReview_Review3.pptx [--no-pdf]
 """
 
 from __future__ import annotations
@@ -32,6 +32,8 @@ HEADER = RGBColor(0x4F, 0x81, 0xBD)
 BAND1, BAND2 = RGBColor(0xD0, 0xD8, 0xE8), RGBColor(0xE9, 0xED, 0xF4)
 RED = RGBColor(0xC0, 0x00, 0x00)
 IA, DM, FA, F = C.IA, C.DM, C.FA, C.F
+prose, numword, fixed = C.prose, C.numword, C.fixed   # prose(): docs/prose_v3.json
+V3, J, DV, RP, DET = C.V3, C.J, C.DV, C.RP, C.DET
 
 
 # ---------------------------------------------------------------- helpers
@@ -228,9 +230,10 @@ def build(template: Path, out: Path) -> None:
     # 9 FR,10 modules,11 results,12 conclusion,13 outcome,14 refs
     duplicate(pres, 11, 12)          # Results (2/2)
     duplicate(pres, 11, 13)          # Project Demonstration
+    duplicate(pres, 11, 13)          # Results (3/3): local replication, ahead of the demo
     S = pres.slides
-    title_s, mail, aim, abstract, lit1, lit2, gap, obj, arch, fr, mods, res1, res2, demo, \
-        concl, outcome, refs = list(S)
+    title_s, mail, aim, abstract, lit1, lit2, gap, obj, arch, fr, mods, res1, res2, res3, \
+        demo, concl, outcome, refs = list(S)
 
     # 1. Title -----------------------------------------------------------
     t = shape(title_s, "Title 6")
@@ -289,7 +292,7 @@ def build(template: Path, out: Path) -> None:
         ("Result. ", f"Intent recovered {C.pct(IA['floor'])} → {C.pct(IA['treatment'])} → "
                      f"{C.pct(IA['ceiling'])}; gap recovery {IA['gap_recovery']:.2f} (p = "
                      f"{IA['mcnemar_p']:.2f}). Clarification worked where it got the chance; "
-                     "the limit is the detector's recall."),
+                     "the limit is the detector's recall. " + prose("deck.abstract.v3")),
     ], size=18, gap=10)
 
     # 5-6. Literature review -------------------------------------------
@@ -381,14 +384,15 @@ def build(template: Path, out: Path) -> None:
     mb = content(mods)
     remove_shape(mb)
     table(mods, 700000, 1350000, W - 1400000, ["Module", "What it does"], [
-        ["Ingestion (ingest/)", "Diff parser, AST symbol resolution, deterministic context"],
+        ["Ingestion (ingest/)", "Diff parser, AST / multi-language symbol resolution, "
+                                "deterministic context"],
         ["Detection (detect/)", "Heuristic (15 features), classifier, sampling and "
                                 "perturbation uncertainty"],
         ["Clarification (clarify/)", "Targeted questions; Responder: GitHub / simulated "
                                      "author / none"],
         ["Review (review/)", "Structured findings, markdown rendering"],
-        ["LLM layer (llm/)", "Gemini + Anthropic backends; retries, timeouts, quota, JSON "
-                             "recovery"],
+        ["LLM layer (llm/)", "Gemini, Anthropic, Ollama backends; retries, timeouts, quota, "
+                             "JSON recovery"],
         ["GitHub bot (gh/), CLI", "Webhook app; ingest, detect, review, replay, serve"],
         ["Benchmark (experiments/)", "Intent stripping, mutation + execution verification, "
                                      "2 x 3 runner, judge, statistics"],
@@ -397,7 +401,7 @@ def build(template: Path, out: Path) -> None:
     ], [1.3, 3.2], size=14, row_h=480000)
 
     # 12. Results (1/2) ------------------------------------------------------
-    set_title(res1, "Experiments and Results (1/2)")
+    set_title(res1, "Experiments and Results (1/3)")
     rb = content(res1)
     resize(rb, top=4150000, height=2100000)
     bullets(rb, [
@@ -406,27 +410,44 @@ def build(template: Path, out: Path) -> None:
         f"Withholding all written intent opened a gap: {C.pct(IA['ceiling'])} → "
         f"{C.pct(IA['floor'])}. Clarification closed {IA['gap_recovery']:.2f} of it "
         f"(95% CI {IA['gap_ci'][0]:.2f}-{IA['gap_ci'][1]:.2f}, McNemar p = "
-        f"{IA['mcnemar_p']:.2f}) - right direction, not significant at n = 36.",
-        f"Defects caught: {C.frac(DM['floor'], 12)} / {C.frac(DM['treatment'], 12)} / "
-        f"{C.frac(DM['ceiling'], 12)} - even with full context the reviewer approved 11 of "
-        "12 broken patches.",
+        f"{IA['mcnemar_p']:.2f}) - right direction, not significant at n = {IA['n']}.",
+        f"Defects caught: {C.frac(DM['floor'], DM['n'])} / {C.frac(DM['treatment'], DM['n'])} / "
+        f"{C.frac(DM['ceiling'], DM['n'])} - even with full context the reviewer approved "
+        f"{DV['v2_defect_ceiling_missed']} of {DM['n']} broken patches.",
     ], size=15, gap=4)
     picture(res1, "fig7_results.png", 700000, 1200000, W - 1400000, 2900000)
 
     # 13. Results (2/2) ------------------------------------------------------
-    set_title(res2, "Experiments and Results (2/2)")
+    set_title(res2, "Experiments and Results (2/3)")
     rb = content(res2)
     resize(rb, left=700000, top=4300000, width=W - 1400000, height=2000000)
     bullets(rb, [
         f"Floor missed intent {F['floor_misses']}x → detector asked on {F['detector_asked']} → "
         f"author answered {F['author_answered']} → treatment recovered {F['treatment_recovered']}"
         ": clarification worked where it got the chance.",
-        "The limit is detector recall: the heuristic is perfectly precise (1.00) but finds "
-        "21% of ambiguous cases; sampling uncertainty separates the contexts and needs a "
-        "higher threshold.",
+        f"The limit is detector recall: the heuristic is perfectly precise "
+        f"({fixed(DET['heuristic']['precision'], 2)}) but finds "
+        f"{C.pct(DET['heuristic']['recall'])} of ambiguous cases; sampling uncertainty "
+        "separates the contexts and needs a higher threshold.",
     ], size=15, gap=4)
     picture(res2, "fig8_funnel.png", 500000, 1250000, (W - 1200000) // 2, 2950000)
     picture(res2, "fig9_detectors.png", 600000 + (W - 1200000) // 2, 1250000,
+            (W - 1200000) // 2, 2950000)
+
+    # 13b. Results (3/3): local replication and judge check ------------------
+    set_title(res3, "Experiments and Results (3/3): local replication and judge check")
+    for r in next(sh for sh in res3.shapes if sh.is_placeholder
+                  and sh.placeholder_format.type in (1, 3)).text_frame.paragraphs[0].runs:
+        r.font.size = Pt(24)          # the long title must stay on one line
+    rb = content(res3)
+    resize(rb, left=700000, top=4300000, width=W - 1400000, height=2000000)
+    bullets(rb, [
+        prose("deck.v3.replication"),
+        prose("deck.v3.judges"),
+        prose("deck.v3.limits"),
+    ], size=15, gap=4)
+    picture(res3, "fig15_v3_results.png", 500000, 1250000, (W - 1200000) // 2, 2950000)
+    picture(res3, "fig16_judges.png", 600000 + (W - 1200000) // 2, 1250000,
             (W - 1200000) // 2, 2950000)
 
     # 14. Project demonstration ---------------------------------------------
@@ -436,24 +457,28 @@ def build(template: Path, out: Path) -> None:
     picture(demo, "fig13_demo_replay.png", 650000 + (W - 1100000) // 2, 1250000,
             (W - 1100000) // 2, 4300000)
     textbox(demo, 450000, 5600000, W - 900000, 600000, [
-        ("$ ./demo.sh  ", "- Stage 2 asks (0.889) on an ambiguous PR and proceeds (0.296) on a "
+        ("$ ./demo.sh  |  > .\\demo.ps1  ", "- Stage 2 asks (0.889) on an ambiguous PR and proceeds (0.296) on a "
                          "clear one; then sympy-12481 is replayed: the floor misreads it, "
                          "ClarifyReview asks, gets the answer, and matches the full-context "
                          "review.")], size=13)
 
     # 15. Conclusion and future work ----------------------------------------
     bullets(content(concl), [
-        ("Built: ", f"four-stage reviewer, four detectors, two LLM backends, GitHub bot, "
-                    f"benchmark harness; {C.N_TESTS} tests; TRL 4."),
+        ("Built: ", f"four-stage reviewer, four detectors, three LLM backends (Gemini, "
+                    f"Anthropic, Ollama), GitHub bot, benchmark harness; {C.N_TESTS} tests; "
+                    "TRL 4."),
         ("Found: ", "golden patches document their own intent - the pilot caught this and "
                     "the design was corrected before the main run."),
         ("Found: ", f"clarification recovered {IA['gap_recovery']:.2f} of the intent gap; it "
                     "succeeded where asked, and detector recall is the bottleneck."),
         ("Found: ", "defect detection is limited by the reviewer model, not by missing intent."),
+        ("Found: ", prose("deck.conclusion.v3")),
         ("Future work: ", "train the classifier on 300 labelled PRs and freeze the sampling "
-                          "threshold; validate the judge with humans; run the developer study; "
-                          "scale up with a stronger reviewer."),
-    ], size=17, gap=8)
+                          "threshold; validate the judge with humans (AI-vs-AI calibration "
+                          f"done); label the {RP['n_prs']} collected real PRs; run the developer "
+                          "study; deploy the bot on live GitHub; scale up with a stronger "
+                          "reviewer."),
+    ], size=15, gap=6)
 
     # 16. Outcome ------------------------------------------------------------
     ob = next(s for s in outcome.shapes if s.is_placeholder and s.placeholder_format.idx == 1)
@@ -462,7 +487,8 @@ def build(template: Path, out: Path) -> None:
          "Critiquing: Ambiguity-Aware Intent Clarification for LLM-Based Pull Request "
          "Review\" (IEEE format); to be submitted to a Scopus-indexed conference."),
         ("Others - working prototype (TRL 4): ", "ClarifyReview GitHub bot and CLI, "
-         "benchmark harness, 32 execution-verified mutants and the full study log, released "
+         f"benchmark harness, {C.MUT['by_status']['verified']} execution-verified mutants and the "
+         "full study log, released "
          "with the code."),
     ], size=18, gap=12)
 

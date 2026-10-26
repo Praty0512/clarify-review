@@ -19,6 +19,7 @@ open the database read-only.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import csv
 import json
 import random
@@ -385,10 +386,13 @@ def compare(db_path: Path, a: str, b: str) -> dict:
 # ----------------------------------------------------------------- analyze
 
 
-def analyze_with_label(db_path: Path, label: str, out: Path) -> dict:
-    """Study A report using `label`'s scores, computed on a temporary db copy."""
-    from experiments import analyze
+@contextlib.contextmanager
+def judged_copy(db_path: Path, label: str):
+    """Yield a temporary copy of the db whose `judgements` hold `label`'s scores.
 
+    `label` 'api' leaves the existing judgements as they are. The source db is
+    opened read-only and is never modified; the copy is deleted on exit.
+    """
     with tempfile.TemporaryDirectory() as td:
         tmp = Path(td) / "copy.db"
         with _ro(db_path) as src:
@@ -411,8 +415,20 @@ def analyze_with_label(db_path: Path, label: str, out: Path) -> dict:
                            defect_caught, false_alarm, intent_reason, defect_reason,
                            false_alarm_reason, judge_model FROM external_judgements
                            WHERE judge_label=?""", (label,))
-            n = conn.execute("SELECT COUNT(*) FROM judgements").fetchone()[0]
             conn.commit()
+        finally:
+            conn.close()
+        yield tmp
+
+
+def analyze_with_label(db_path: Path, label: str, out: Path) -> dict:
+    """Study A report using `label`'s scores, computed on a temporary db copy."""
+    from experiments import analyze
+
+    with judged_copy(db_path, label) as tmp:
+        conn = sqlite3.connect(tmp)
+        try:
+            n = conn.execute("SELECT COUNT(*) FROM judgements").fetchone()[0]
         finally:
             conn.close()
         report = analyze.study_a_report(tmp)
