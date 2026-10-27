@@ -694,42 +694,42 @@ def chapters() -> list[tuple[str, list]]:
          "questions go to a Responder: on GitHub it posts a comment and waits; in the benchmark "
          "it is the simulated author. On timeout the pipeline proceeds and flags the review "
          "low-confidence."),
-        ("lead", "Stage 4 - Review generator: ", "Produces structured findings conditioned on any "
-         "clarification received. Markdown rendering happens only at the end, so evaluation "
-         "scores findings mechanically rather than parsing prose."),
-        ("p", "Two design decisions protect the validity of the evaluation. The single-pass "
-              "baseline is not separate code: it is the same pipeline with a detector that never "
-              "asks, and a test asserts that both conditions then render byte-identical prompts. "
-              "And production and benchmark differ only in which Responder is plugged in, so the "
-              "experiment exercises exactly the code that would be deployed."),
+        ("lead", "Stage 4 - Review generator: ", "Generates structured findings based on any clarification received. Markdown "
+                                                 "rendering happens only at the end, so the evaluation scores findings mechanically "
+                                                 "rather than by parsing prose."),
+        ("p", "There are two design decisions that contribute to the validity of the evaluation. "
+              "The single-pass baseline is not separate code: it is the same pipeline with a "
+              "detector that never asks, and a test asserts that both conditions then render "
+              "byte-identical prompts. Production and benchmark differ only in which Responder is "
+              "plugged in, so the experiment runs exactly the code that will be deployed."),
         ("h2", "4.2 Design"),
         ("h3", "4.2.1 Data Flow Diagram"),
-        ("p", "The context diagram shows ClarifyReview mediating between the pull request author "
-              "and the services it depends on; the level 1 decomposition expands it into the four "
-              "processes of the architecture and their two data stores (Figure 4.2)."),
+        ("p", "The context diagram depicts ClarifyReview as a mediator between the pull request "
+              "author and the services it depends on; the level 1 decomposition breaks it down into"
+              " the four processes of the architecture and their two data stores (Figure 4.2)."),
         ("fig", "fig3_dfd.png", "Figure 4.2 Data flow diagram: level 0 and level 1", 6.0),
-        ("p", "The flow from process 2.0 to 3.0, labelled ask, is the branch that distinguishes "
-              "this system from single-pass review; when the detector proceeds, that flow is "
-              "absent. The flow from process 4.0 into the experiment log carries the complete "
-              "record of the run, which is how the raw data for Chapter 7 accumulated."),
+        ("p", "The flow from process 2.0 to 3.0 is labelled ask and is the difference between this "
+              "system and single-pass review; if the detector proceeds, the flow is not present. "
+              "The flow from process 4.0 to the experiment log contains the full record of the run,"
+              " which is how the raw data for Chapter 7 accumulated."),
         ("h3", "4.2.2 Use Case Diagram"),
-        ("p", "The system serves two actors: the pull request author, who interacts through "
-              "GitHub in the ordinary course of work, and the researcher, who configures and "
-              "evaluates it (Figure 4.3). Answering a clarifying question is the one use case no "
-              "deployed tool offers, and it is optional: an author who ignores the question still "
-              "receives a review, marked lower-confidence."),
+        ("p", "The system serves two actors: the pull request author, who interacts with it through"
+              " GitHub in the normal course of work, and the researcher, who configures and "
+              "evaluates it (Figure 4.3). Answering a clarifying question is the one use case that "
+              "no deployed tool offers, and it is optional: an author who ignores the question "
+              "still receives a review, marked lower-confidence."),
         ("fig", "fig4_usecase.png", "Figure 4.3 Use case diagram", 5.6),
         ("h3", "4.2.3 Class Diagram"),
-        ("p", "The class diagram reflects the implementation (Figure 4.4). The detector classes "
-              "share one abstract base, so the pipeline never learns which detector is installed. "
-              "PRContext is the single input every stage reads, and the Responder protocol is the "
-              "substitution point between production and benchmark."),
+        ("p", "The class diagram shows the implementation (Figure 4.4). All the detector classes "
+              "share an abstract base, so the pipeline cannot tell which detector is installed. "
+              "PRContext is the single input that every stage reads, and the Responder protocol is "
+              "the exchange point between production and benchmark."),
         ("fig", "fig5_class.png", "Figure 4.4 Class diagram of the implemented system", 6.3),
         ("h3", "4.2.4 Sequence Diagram"),
-        ("p", "Figure 4.5 traces a pull request the detector flags as ambiguous: a null check "
-              "removed with no linked issue and the commit message \"fix\". The detector scores "
-              "it 0.889 against a threshold of 0.50, the loop asks, and the review is written "
-              "from the author's stated intent rather than from a guess."),
+        ("p", "Figure 4.5 shows a pull request that the detector considers ambiguous: a null check "
+              "removed without any linked issue and with the commit message \"fix\". The detector "
+              "scores it 0.889 against a threshold of 0.50, the loop asks, and the review is "
+              "written from the author's stated intent rather than from a guess."),
         ("fig", "fig6_sequence.png", "Figure 4.5 Sequence diagram for an ambiguous pull request",
          6.3),
     ]))
@@ -815,7 +815,7 @@ def chapters() -> list[tuple[str, list]]:
         ("table", "Table 5.1 Modules of the implementation", ["Module", "Files", "Responsibility"],
          module_rows, [1.2, 2.6, 2.8]),
         ("h3", "5.1.1 Ingestion"),
-        ("p", "The diff parser reads unified diffs into hunks with exact line arithmetic. "
+        ("p", "The diff parser reads unified diffs into hunks, using exact line arithmetic. "
               + prose("report.s5_1_1.extraction") +
               " The context builder orders every section deterministically and "
               "computes a SHA-256 fingerprint, which the ablation uses to prove that two "
@@ -823,23 +823,23 @@ def chapters() -> list[tuple[str, list]]:
         ("h3", "5.1.2 Ambiguity detectors"),
         ("p", "All detectors implement score(context) returning a value in [0, 1], and a shared "
               "decide() compares it with a threshold loaded from a frozen file, so the threshold "
-              "comparison happens in one place. The heuristic normalises its score as the "
-              "fraction of available evidence present, so it reads as \"how many ambiguity "
-              "signals fired\". The uncertainty detectors embed the eight intent hypotheses and "
-              "combine mean pairwise dispersion with the entropy of their semantic clusters."),
+              "comparison happens in one place. The heuristic scales its score to the proportion of"
+              " the available evidence that is present, so it reads as \"how many ambiguity signals "
+              "fired\". The uncertainty detectors embed the eight intent hypotheses and combine mean"
+              " pairwise dispersion with the entropy of their semantic clusters."),
         ("h3", "5.1.3 Clarification loop and review generator"),
-        ("p", "Questions and reviews are requested as JSON validated against Pydantic schemas. "
-              "The question schema requires a target, which is what keeps questions specific. "
-              "The loop is written against the Responder protocol, so the GitHub implementation "
-              "(post and poll for a reply), the benchmark oracle and a null responder are "
-              "interchangeable."),
+        ("p", "Questions and reviews are requested as JSON validated against Pydantic schemas. The "
+              "question schema must have a target, and this is why the questions are specific. The "
+              "loop is written against the Responder protocol, so the GitHub implementation (post "
+              "and poll for a reply), the benchmark oracle and a null responder can be substituted "
+              "for each other."),
         ("h3", "5.1.4 LLM provider layer"),
-        ("p", "A facade exposes structured() and text() calls and hides provider differences. "
-              "Running a long study on free-tier access shaped this layer: transient 503 and "
-              "per-minute 429 errors are retried with exponential backoff and jitter, a per-day "
-              "quota error fails fast so retries do not burn quota, requests time out after "
-              "180 s, malformed JSON is recovered and re-validated, and the model that actually "
-              "served each call is recorded. " + prose("report.s5_1_4.ollama")),
+        ("p", "A facade exposes structured() and text() calls and hides the differences among "
+              "providers. Running a long study on free-tier access shaped this layer: transient "
+              "503 errors and per-minute 429 errors are retried with exponential backoff and "
+              "jitter, a per-day quota error fails fast so that retries do not consume quota, "
+              "requests time out after 180 s, malformed JSON is recovered and re-validated, and "
+              "the model that actually served each call is recorded. " + prose("report.s5_1_4.ollama")),
         ("h3", "5.1.5 GitHub bot"),
         ("p", prose("report.s5_1_5.bot")),
         ("h2", "5.2 Evaluation Methodology"),
@@ -852,17 +852,18 @@ def chapters() -> list[tuple[str, list]]:
         ("fig", "fig11_design.png", "Figure 5.1 The two-by-three study design", 6.3),
         ("h3", "5.2.2 Withholding intent"),
         ("p", "Version 1 of the manipulation removed the linked issue, title, description and "
-              "commit messages. The pilot showed this was insufficient (Section 7.1), so version "
-              "2 also removes every comment, trailing comment and docstring that the patch adds, "
-              "leaving every line of code untouched. Only docstrings opened on an added line are "
-              "removed, a rule adopted after an earlier version deleted real code in a hunk that "
-              "began inside an existing docstring; a regression test guards it."),
+              "commit messages. The pilot demonstrated that this was not enough (Section 7.1), so "
+              "version 2 also eliminates every comment, trailing comment and docstring that the "
+              "patch adds, while leaving the lines of code unchanged. Only docstrings opened on an "
+              "added line are removed; this rule was introduced after an earlier version deleted "
+              "real code in a hunk that began inside an existing docstring, and a regression test "
+              "guards it."),
         ("h3", "5.2.3 Execution-verified defects"),
-        ("p", "Correct patches measure false alarms but not detection, so defects are injected "
-              "into the lines a golden patch adds using six operators (invert comparison, negate "
-              "condition, flip constant, drop guard, swap boolean operator, off-by-one). A mutant "
-              "is kept only if the repository's FAIL_TO_PASS tests pass with the golden patch and "
-              "fail with the mutant. Figure 5.2 shows the yield."),
+        ("p", "Correct patches measure false alarms but not detection, so defects are added to the "
+              "lines a golden patch adds, using six operators (invert comparison, negate condition,"
+              " flip constant, drop guard, swap boolean operator, off-by-one). A mutant is kept "
+              "only if the repository's FAIL_TO_PASS tests pass with the golden patch and fail with"
+              " the mutant. The yield is represented in Figure 5.2."),
         ("fig", "fig10_mutants.png", "Figure 5.2 Yield of execution-verified mutants on sympy",
          5.6),
         ("h3", "5.2.4 Instance selection"),
@@ -873,15 +874,15 @@ def chapters() -> list[tuple[str, list]]:
               "patches from xarray, sphinx, astropy, django, pylint, pytest and scikit-learn. "
               "Instances were chosen hardest-first by SWE-bench's own difficulty annotation, an "
               "attribute assigned by the benchmark's annotators rather than by our detector, so "
-              "selection does not favour the detector being evaluated."),
+              "the selection is not biased in favour of the detector being tested."),
         ("h3", "5.2.5 Simulated author and judge"),
-        ("p", "When the treatment asks, a simulated author answers. It sees only the withheld "
-              "issue text and commit messages - never the diff, the defect, or whether one "
-              "exists - and must decline when its notes do not cover the question. Every "
-              "exchange is logged with its prompt version for a leakage audit. Reviews are "
-              "scored by an LLM judge from a different model family than the reviewer, on three "
-              "checklist questions: was the intent recovered, was the injected defect caught, "
-              "and was a false alarm raised on correct code."),
+        ("p", "When the treatment asks, a simulated author responds. It sees only the withheld "
+              "issue text and commit messages - never the diff, the defect, or whether one exists -"
+              " and must decline when its notes do not cover the question. Every exchange is logged"
+              " with its prompt version for a leakage audit. Reviews are scored by an LLM judge "
+              "from a different model family than the reviewer, on three checklist questions: was "
+              "the intent recovered, was the injected defect caught, and was a false alarm raised "
+              "on correct code."),
         ("p", prose("report.s5_2_5.calibration")),
         ("h3", "5.2.6 Statistical analysis"),
         ("p", "Paired binary outcomes are compared with McNemar's exact test [12] and gap "
@@ -921,23 +922,22 @@ def chapters() -> list[tuple[str, list]]:
           ["Model returned JSON with leading whitespace", "Valid reviews rejected",
            "Recover and re-validate against the schema"]],
          [2.6, 2.0, 2.0]),
-        ("p", "End-to-end tests of the GitHub bot against a fake GitHub, driven through "
-              "signed webhooks, found further defects in its webhook path, all fixed: a reply "
-              "resumed the review but the log recorded the run as never having asked; a pull "
-              "request whose author never replied waited indefinitely; running under the "
-              "author's own token, the bot read its own question as the answer; and a failure "
-              "to generate the question left the pull request with no review. Parked runs now "
-              "persist in SQLite and survive restarts, a sweep finishes them at the timeout, "
-              "hidden markers identify every comment the bot posts, the recorded detector "
-              "decision is replayed on resumption, and a failed question falls back to a "
-              "single-pass review that says why."),
+        ("p", "End-to-end tests of the GitHub bot against a fake GitHub, driven through signed "
+              "webhooks, found further defects in its webhook path, all fixed: a reply resumed the "
+              "review but the log recorded the run as never having asked; a pull request whose "
+              "author never replied waited indefinitely; running under the author's own token, the "
+              "bot read its own question as the answer; and a failure to generate the question left"
+              " the pull request with no review. Parked runs are now stored in SQLite and survive "
+              "restarts, a sweep completes them at the timeout, hidden markers mark every comment "
+              "the bot posts, the recorded detector decision is replayed on resumption, and if the "
+              "question fails the pipeline falls back to a single-pass review that explains why."),
     ]))
 
     # ---------------------------------------------------------------- 6
     ch.append(("PROJECT DEMONSTRATION", [
-        ("p", "The demonstration runs from a single script and needs no API key: Stages 1 and 2 "
-              "run live, and Stages 3 and 4 are replayed from the study's experiment log, so "
-              "nothing depends on a model provider being available during a presentation."),
+        ("p", "The demonstration is run from a single script and does not require an API key: "
+              "Stages 1 and 2 run live, and Stages 3 and 4 are replayed from the study's experiment"
+              " log, so no model provider needs to be available during a presentation."),
         ("code", "$ git clone https://github.com/Praty0512/clarify-review && cd clarify-review\n"
                  "$ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'\n"
                  "$ ./demo.sh            # all four stages, offline, about ten seconds\n"
@@ -949,25 +949,25 @@ def chapters() -> list[tuple[str, list]]:
                  "> .\\demo.ps1 -Full     # Stages 3-4 live; needs GEMINI_API_KEY",
          "Listing 6.1 Running the demonstration"),
         ("h2", "6.1 Stages 1 and 2: ask, and knowing when not to"),
-        ("p", "The first pull request removes a null check, has no linked issue and the commit "
-              "message \"fix\". Ingestion reports that the function validate_user was modified "
-              "and prints a stable fingerprint. The heuristic detector fires seven rules and "
-              "scores 0.889 against a threshold of 0.50, so it asks. The second pull request is "
-              "well described and carries a regression test; the same detector scores 0.296 and "
-              "proceeds (Figure 6.1). The second case matters as much as the first: a tool that "
-              "asks on every pull request gets switched off."),
+        ("p", "The first pull request removes a null check and has no linked issue, and its commit "
+              "message is \"fix\". Ingestion reports that the function validate_user was modified and"
+              " prints a stable fingerprint. The heuristic detector triggers seven rules and scores"
+              " 0.889 against a threshold of 0.50, so it asks. The second pull request is well "
+              "described and has a regression test; the same detector scores 0.296 and proceeds "
+              "(Figure 6.1). The second case is as important as the first, because a tool that asks"
+              " on every pull request gets switched off."),
         ("fig", "fig12_demo_detect.png", "Figure 6.1 Stage 2 asks on an ambiguous change and "
                                          "proceeds on a clear one", 6.3),
         ("h2", "6.2 Stages 3 and 4: a recorded run from the study"),
-        ("p", "clarifyreview replay prints one study instance in all three conditions "
-              "(Figure 6.2). In sympy-12481 the patch lets the Permutation constructor accept "
-              "non-disjoint cycles. Without its issue text the single-pass reviewer read the "
-              "change as \"tidy up permutation instantiation logic\" - the intent was missed. "
-              "ClarifyReview's detector scored the stripped change 0.556 and asked whether "
-              "removing the specialised error was intended. The simulated author answered that "
-              "non-disjoint cycles should be accepted and applied left to right, and the "
-              "resulting review matched the full-context reading. The judge scored intent "
-              "recovered for the treatment and the ceiling, and not for the floor."),
+        ("p", "clarifyreview replay shows one study instance in all three conditions (Figure 6.2). "
+              "In sympy-12481 the patch allows non-disjoint cycles to be passed to the Permutation "
+              "constructor. Without its issue text, the single-pass reviewer interpreted the change"
+              " as \"tidy up permutation instantiation logic\", so the intent was missed. "
+              "ClarifyReview's detector scored the stripped change 0.556 and asked whether removing"
+              " the specialised error was intended. The simulated author answered that non-disjoint"
+              " cycles should be accepted and applied left to right, and the resulting review "
+              "matched the full-context reading. The judge scored intent recovered for the "
+              "treatment and the ceiling, and not for the floor."),
         ("fig", "fig13_demo_replay.png", "Figure 6.2 Replay of sympy-12481 across the three "
                                          "conditions", 6.3),
         ("h2", "6.3 Deployment as a GitHub bot"),
@@ -1051,26 +1051,27 @@ def chapters() -> list[tuple[str, list]]:
               f"parameter the issue text never mentions. Of the detector's {F['asked_total']} "
               f"questions overall, {F['asked_total'] - F['detector_asked']} went to instances the "
               "floor already understood, where an answer cannot improve intent recovery."),
-        ("p", "Where clarification was given the chance, it worked; but the chance arose "
-              "rarely. The binding constraint is the detector's recall, not the usefulness of an "
-              "answer once given. This is the most actionable result of the study, because it "
-              "says which component to improve next."),
+        ("p", "Where clarification was given the chance, it worked; but the chance arose rarely. "
+              "The binding constraint is the detector's recall, not the usefulness of an answer "
+              "once given. This is the most actionable outcome of the study, as it shows what to "
+              "work on next."),
         ("h2", "7.4 Defect Detection"),
         ("p", f"The reviewer caught {frac(dm['floor'], dm['n'])} injected defects at the floor, "
               f"{frac(dm['treatment'], dm['n'])} with clarification and "
               f"{frac(dm['ceiling'], dm['n'])} with "
-              "full context. The full-context figure is the informative one: with the issue in "
-              f"hand, the reviewer still approved {numword(DV['v2_defect_ceiling_missed'])} of "
-              f"{numword(dm['n'])} broken patches. On this "
+              "full context. The full-context figure is the informative one: even with the issue "
+              f"in hand, the reviewer went on to approve {numword(DV['v2_defect_ceiling_missed'])} of "
+              f"{numword(dm['n'])} broken patches. For this "
               "reviewer model, the limit on defect detection is reading the code, not knowing "
-              "the intent, and clarification cannot lift detection above that ceiling. One "
-              "mutant was caught without the issue text and approved with it - a single case, "
-              "but consistent with a stated intent anchoring a reviewer toward acceptance."),
+              "the intent, and clarification cannot push detection above that ceiling. One "
+              "mutant was caught without the issue text and approved with it - one case, but in "
+              "line with a declared purpose nudging a reviewer towards acceptance."),
         ("h2", "7.5 Detector Comparison"),
-        ("p", "Using constructed labels - a stripped context is ambiguous by construction and "
-              "its full counterpart is clear - Table 7.2 and Figure 7.3 compare the detectors. "
-              "A detector that keys on a missing issue gets part of its recall for free under "
-              "these labels, so the figures bound real-world recall from above."),
+        ("p", "Using constructed labels - a stripped context is ambiguous by construction and its "
+              "full counterpart is clear - Table 7.2 and Figure 7.3 make a comparison of the "
+              "detectors. A detector that is sensitive to a missing issue gets part of its recall "
+              "for free under these labels, so the figures give an upper bound on real-world "
+              "recall."),
         ("table", "Table 7.2 Detectors on constructed labels",
          ["Detector", "Decisions", "Ask rate", "Precision", "Recall", "Mean score (stripped / full)"],
          [[n, str(det[n]["n_decisions"]), pct(det[n]["ask_rate"]), f"{det[n]['precision']:.2f}",
@@ -1083,7 +1084,7 @@ def chapters() -> list[tuple[str, list]]:
               "limit traced in Section 7.3. The uncertainty detectors cost eight model calls per "
               f"decision and were therefore run on {numword(DV['uncertainty_instances'])} instances only. "
               "At their default "
-              "thresholds both asked on every decision. Sampling dispersion did separate the "
+              "settings, both asked on every decision. Sampling dispersion did separate the "
               "conditions, and re-sweeping its recorded scores suggests a threshold near 0.60 "
               "would have separated them almost perfectly; because those scores come from the "
               "study set, that threshold is reported as a diagnosis and not adopted. Prompt "
@@ -1091,13 +1092,13 @@ def chapters() -> list[tuple[str, list]]:
         ("h2", "7.6 A Protocol Deviation, Reported"),
         ("p", "In the first version 2 run, the detector asked six questions and the treatment "
               "received no usable answer: four were empty and two were refusals. The simulated "
-              "author's model reasons internally whether or not reasoning is requested, and "
-              "those hidden tokens exhausted its 400-token budget before an answer was written; "
-              "its prompt also refused any question phrased in terms of code it had not seen. "
-              "The budget was raised, the prompt revised to answer intent questions from the "
-              "issue text and refuse only when the text is silent, and the treatment re-run for "
-              "the six affected instances; floor and ceiling were not re-run. Because the prompt "
-              "was revised after the refusals were seen, both versions are logged with every "
+              "author's model reasons internally whether or not reasoning is requested, and those "
+              "hidden tokens used up its 400-token allowance before an answer was written; its "
+              "prompt also refused any question phrased in terms of code it had not seen. The "
+              "budget was increased, the prompt was revised to answer intent questions from the "
+              "issue text and to refuse only when the text is silent, and the treatment was re-run "
+              "on the six affected instances; floor and ceiling were not re-run. Because the prompt"
+              " was revised after the refusals were seen, both versions are recorded with every "
               "exchange and the deviation is reported here and in the paper."),
         ("h2", "7.7 Cost Analysis"),
         ("table", "Table 7.3 Resources used by the main study",
@@ -1115,16 +1116,15 @@ def chapters() -> list[tuple[str, list]]:
            f"about {numword(DV['v2_asked_latency_minutes'])} minutes, dominated by provider "
            "retries and hidden reasoning"]],
          [3.4, 3.2]),
-        ("p", "The study cost nothing in money; its real cost was quota and time. A per-day "
-              "request quota applied per model was the binding constraint throughout, which is "
-              "why roles were spread across two model families. A clarification round added "
-              f"about {numword(DV['v2_asked_latency_minutes'])} minutes to the asked instances, "
-              "almost all of it waiting on provider "
-              "retries and the question and answer models' hidden reasoning; the heuristic "
-              f"detector itself adds {DET['heuristic']['mean_ms']} ms. On a paid key the same "
-              "run would be "
-              "priced by the token counts above and the provider's published rates, which the "
-              "configuration holds in one table."),
+        ("p", "The study was free of monetary expense; the cost was in quota and time. A "
+              "per-day request quota applied per model was the binding constraint throughout, "
+              "hence the distribution of roles over two model families. A clarification round "
+              f"added about {numword(DV['v2_asked_latency_minutes'])} minutes to the asked "
+              "instances, nearly all of it spent waiting on provider retries and on the question "
+              "and answer models' hidden reasoning; the heuristic detector itself adds "
+              f"{DET['heuristic']['mean_ms']} ms. On a paid key, the same run would be priced by "
+              "the token counts above and the provider's published rates, which are stored in one "
+              "table in the configuration."),
         ("h2", "7.8 Replication on a Local Reviewer (v3)"),
         ("p", prose("report.s7_8.setup")),
         ("table", "Table 7.4 Judged outcomes of the local replication (v3, agent judge)",
@@ -1212,13 +1212,13 @@ def chapters() -> list[tuple[str, list]]:
               f"detectors, three provider backends (Gemini, Anthropic and local Ollama), a GitHub bot, "
               "and a benchmark harness covered "
               f"by {N_TESTS} automated tests, at technology readiness level 4."),
-        ("p", "The evaluation produced three findings. First, evaluating this idea on golden "
+        ("p", "The evaluation yielded three conclusions. First, assessing this idea on golden "
               "patches requires withholding more than the linked issue, because well-written "
-              "patches document their own intent; the pilot found this before the main run "
-              "spent its quota. Second, with all natural-language intent withheld, clarification "
+              "patches document their own intent; the pilot found this before the main run used "
+              "up its quota. Second, with all natural-language intent withheld, clarification "
               f"recovered {IA['gap_recovery']:.2f} of the intent gap - in the expected direction "
               "but not significant at this sample size - and tracing each instance shows that "
-              "clarification succeeded where it was given the chance and that the limit is the "
+              "clarification succeeded when it was given the opportunity and that the limit is the "
               "detector's recall. Third, defect detection was low even with full context, so on "
               "this reviewer the bottleneck for catching defects is the reviewer, not the intent."),
         ("p", prose("report.conclusion.v3")),
