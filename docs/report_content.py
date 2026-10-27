@@ -256,7 +256,7 @@ def gemini_v3_blocks() -> list:
     n = ia["n"]
     sig = "significant" if ia["mcnemar_p"] < 0.05 else "not statistically significant"
     rows = [["Intent recovered, all", _frac(ia["floor"], n), _frac(ia["treatment"], n),
-             _frac(ia["ceiling"], n), f"{ia['mcnemar_p']:.2f}"]]
+             _frac(ia["ceiling"], n), f"{fixed(ia['mcnemar_p'], 2)}"]]
     for key, label in (("intent_golden", "Intent recovered, golden"),
                        ("intent_mutant", "Intent recovered, mutant"),
                        ("defect_mutant", "Defect caught, mutants"),
@@ -265,7 +265,7 @@ def gemini_v3_blocks() -> list:
             x = t[key]
             rows.append([f"{label} (n = {x['n']})", _frac(x["floor"], x["n"]),
                          _frac(x["treatment"], x["n"]), _frac(x["ceiling"], x["n"]),
-                         f"{x['mcnemar_p']:.2f}"])
+                         f"{fixed(x['mcnemar_p'], 2)}"])
     out = [
         ("h2", "7.10 The Full v3 Set on the Original Reviewer"),
         ("p", f"The replication in Section 7.8 changed two things at once: the rows and the "
@@ -282,8 +282,8 @@ def gemini_v3_blocks() -> list:
          [2.4, 0.95, 1.0, 0.95, 1.0]),
         ("p", f"Intent recovery was {pct(ia['floor'])} with intent withheld, {pct(ia['treatment'])} "
               f"with clarification and {pct(ia['ceiling'])} with full context: gap recovery "
-              f"{ia['gap_recovery']:.2f}, 95% interval {ia['gap_ci'][0]:.2f} to "
-              f"{ia['gap_ci'][1]:.2f}, McNemar p = {ia['mcnemar_p']:.2f}, {sig}. "
+              f"{fixed(ia['gap_recovery'], 2)}, 95% interval {fixed(ia['gap_ci'][0], 2)} to "
+              f"{fixed(ia['gap_ci'][1], 2)}, McNemar p = {fixed(ia['mcnemar_p'], 2)}, {sig}. "
               f"{ia['discordant_treatment_better']} pairs favoured the treatment and "
               f"{ia['discordant_floor_better']} the floor."
               + (f" The floor missed intent on {f['floor_misses']} instances; the detector asked "
@@ -292,6 +292,19 @@ def gemini_v3_blocks() -> list:
                  f"{f['asked_total']} questions, {f['asked_total'] - f['detector_asked']} went to "
                  f"instances the floor already understood." if f else "")),
     ]
+    dd = G3.get("discordant")
+    if dd:
+        out.append(("p", f"The improvement is therefore not evidence for clarification. Of the "
+                         f"{dd['total']} pairs where floor and treatment disagreed, "
+                         f"{dd['not_asked']} were instances on which the detector did not ask, so "
+                         f"the two conditions sent the reviewer identical input; "
+                         f"{dd['not_asked_treatment_better']} of those favoured the treatment and "
+                         f"{dd['not_asked_floor_better']} the floor by chance alone. Only "
+                         f"{dd['asked_treatment_better'] + dd['asked_floor_better']} discordant pair "
+                         f"involved a question. Across the {G3['not_asked_pairs']} unasked pairs the "
+                         f"reviewer's own run-to-run variation is as large as the effect the study "
+                         f"was designed to detect, which is the main lesson of this run: a single "
+                         f"review per condition cannot resolve a difference of this size."))
     if dm:
         out.append(("p", f"On the {dm['n']} verified mutants the reviewer caught "
                          f"{_frac(dm['floor'], dm['n'])} defects with intent withheld, "

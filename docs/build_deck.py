@@ -473,12 +473,13 @@ def build(template: Path, out: Path) -> None:
                     "succeeded where asked, and detector recall is the bottleneck."),
         ("Found: ", "defect detection is limited by the reviewer model, not by missing intent."),
         ("Found: ", prose("deck.conclusion.v3")),
-        ("Future work: ", "train the classifier on 300 labelled PRs and freeze the sampling "
-                          "threshold; validate the judge with humans (AI-vs-AI calibration "
-                          f"done); label the {RP['n_prs']} collected real PRs; run the developer "
-                          "study; deploy the bot on live GitHub; scale up with a stronger "
-                          "reviewer."),
-    ], size=15, gap=6)
+    ] + ([("Found: ", f"on the original reviewer, {C.G3['discordant']['not_asked']} of "
+                      f"{C.G3['discordant']['total']} changed outcomes had no question asked: "
+                      "reviewer variation is as large as the effect.")] if C.G3.get("discordant") else []) + [
+        ("Future work: ", f"label the {RP['n_prs']} collected real PRs; repeat reviews per "
+                          "condition; run the developer study; deploy the bot on live GitHub; "
+                          "scale up with a stronger reviewer."),
+    ], size=14 if C.G3.get("discordant") else 15, gap=5)
 
     # 16. Outcome ------------------------------------------------------------
     ob = next(s for s in outcome.shapes if s.is_placeholder and s.placeholder_format.idx == 1)

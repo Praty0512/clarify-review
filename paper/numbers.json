@@ -379,7 +379,7 @@
       "mean_ms": 31152.4
     }
   },
-  "tests_passing": "446 passed in 4.26s",
+  "tests_passing": "446 passed in 3.98s",
   "loc": {
     "src": 6375,
     "experiments": 5503,
@@ -418,13 +418,173 @@
   },
   "human": {
     "labelling": {
-      "available": false
+      "available": true,
+      "n": 300,
+      "kappa": 0.2105,
+      "observed_agreement": 0.9767,
+      "reading": "fair",
+      "n_rows": 300,
+      "n_disagree": 7,
+      "n_adjudicated": 7,
+      "n_written": 300,
+      "diff_source": "sheet",
+      "adjudicated_by": "Claude (claude-opus-5-5, AI)",
+      "n_adjudicated_by_ai": 7
     },
     "thresholds": {
-      "available": false
+      "available": true,
+      "values": {
+        "heuristic": 0.65,
+        "classifier": 0.95,
+        "sampling": 0.35,
+        "perturbation": 0.35
+      },
+      "dev_sweep": {
+        "heuristic": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "ask_rate": 0.0099
+        },
+        "classifier": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1": 0.6667,
+          "ask_rate": 0.0099
+        }
+      },
+      "n_labels": 300,
+      "n_ambiguous": 4,
+      "train": {
+        "n": 199,
+        "n_ambiguous": 2
+      },
+      "dev": {
+        "n": 101,
+        "n_ambiguous": 2
+      }
     },
     "judge_validation": {
-      "available": false
+      "available": true,
+      "scorers": [
+        "pratyaksh",
+        "yashika"
+      ],
+      "n_scorers": 2,
+      "metrics": {
+        "intent_recovered": {
+          "n": 60,
+          "n_per_scorer": [
+            60,
+            60
+          ],
+          "kappas": [
+            0.0,
+            -0.03
+          ],
+          "kappa_mean": -0.015,
+          "percent_agreement_mean": 0.875,
+          "human_yes_rate": 0.9916666666666667,
+          "judge_yes_rate": 0.8833333333333333,
+          "n_pairs": 120
+        },
+        "defect_caught": {
+          "n": 60,
+          "n_per_scorer": [
+            60,
+            60
+          ],
+          "kappas": [
+            0.8485,
+            1.0
+          ],
+          "kappa_mean": 0.92425,
+          "percent_agreement_mean": 0.9916499999999999,
+          "human_yes_rate": 0.058333333333333334,
+          "judge_yes_rate": 0.06666666666666667,
+          "n_pairs": 120
+        },
+        "false_alarm": {
+          "n": 60,
+          "n_per_scorer": [
+            60,
+            60
+          ],
+          "kappas": [
+            1.0,
+            1.0
+          ],
+          "kappa_mean": 1.0,
+          "percent_agreement_mean": 1.0,
+          "human_yes_rate": 0.016666666666666666,
+          "judge_yes_rate": 0.016666666666666666,
+          "n_pairs": 120
+        }
+      },
+      "human_vs_judge": {
+        "pratyaksh": {
+          "defect_caught": {
+            "kappa": 0.8485,
+            "n": 60,
+            "percent_agreement": 0.9833,
+            "reading": "almost perfect"
+          },
+          "false_alarm": {
+            "kappa": 1.0,
+            "n": 60,
+            "percent_agreement": 1.0,
+            "reading": "almost perfect"
+          },
+          "intent_recovered": {
+            "kappa": 0.0,
+            "n": 60,
+            "percent_agreement": 0.8833,
+            "reading": "slight"
+          }
+        },
+        "yashika": {
+          "defect_caught": {
+            "kappa": 1.0,
+            "n": 60,
+            "percent_agreement": 1.0,
+            "reading": "almost perfect"
+          },
+          "false_alarm": {
+            "kappa": 1.0,
+            "n": 60,
+            "percent_agreement": 1.0,
+            "reading": "almost perfect"
+          },
+          "intent_recovered": {
+            "kappa": -0.03,
+            "n": 60,
+            "percent_agreement": 0.8667,
+            "reading": "poor"
+          }
+        }
+      },
+      "human_vs_human": {
+        "pratyaksh vs yashika": {
+          "defect_caught": {
+            "kappa": 0.8485,
+            "n": 60,
+            "percent_agreement": 0.9833,
+            "reading": "almost perfect"
+          },
+          "false_alarm": {
+            "kappa": 1.0,
+            "n": 60,
+            "percent_agreement": 1.0,
+            "reading": "almost perfect"
+          },
+          "intent_recovered": {
+            "kappa": 0.0,
+            "n": 60,
+            "percent_agreement": 0.9833,
+            "reading": "slight"
+          }
+        }
+      }
     },
     "study_b": {
       "available": false
@@ -1049,6 +1209,277 @@
       "k": 54
     }
   },
+  "v3_gemini": {
+    "available": true,
+    "attempted": 96,
+    "runs_ok": 286,
+    "runs_failed": 2,
+    "complete_triples": 94,
+    "judged": 286,
+    "per_condition": {
+      "full_plain": {
+        "n": 96,
+        "ir": 94,
+        "fa": 0,
+        "dc": 12,
+        "ms": 7313.115,
+        "conf": 0.994
+      },
+      "stripped_plain": {
+        "n": 96,
+        "ir": 62,
+        "fa": 3,
+        "dc": 10,
+        "ms": 7618.771,
+        "conf": 0.984
+      },
+      "stripped_clarify": {
+        "n": 94,
+        "ir": 68,
+        "fa": 6,
+        "dc": 13,
+        "ms": 37166.734,
+        "conf": 0.981
+      }
+    },
+    "treatment_ask_rate": 0.1596,
+    "treatment_asks": 15,
+    "treatment_n": 94,
+    "treatment_answered": 14,
+    "treatment_refused": 12,
+    "questions": [
+      {
+        "question": "Is the intent to allow duplicates in cycles while still forbidding them in non-cycle permutations, or was the logic flip actually accidental?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sympy__sympy-12481::mutant"
+      },
+      {
+        "question": "Should _nthroot_mod_composite be updated to respect the all_roots parameter of nthroot_mod, or is returning all roots always the intended behavior for composite moduli?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sympy__sympy-18199::golden"
+      },
+      {
+        "question": "In `_nthroot_mod_composite`, should the logic for lifting roots from mod p to mod p^e be in the `if e != 1` block rather than the `else` block?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sympy__sympy-18199::mutant"
+      },
+      {
+        "question": "Is the override of `self.state_machine.insert_input` intended to persist for all subsequent includes in the current document, or should it be restored to the original method after the directive is run?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sphinx-doc__sphinx-11510::golden"
+      },
+      {
+        "question": "Could you clarify why the initial alias is specifically excluded from being bumped in `bump_prefix` during the `combine` call?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-15128::golden"
+      },
+      {
+        "question": "Was the removal of `self._async_check()` in `SessionMiddleware.__init__` intentional, or should it be called after `super().__init__(get_response)`?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-13344::golden"
+      },
+      {
+        "question": "Does HasKeyOrArrayIndex intend to support array indices in a way that HasKey did not, or is this purely a refactor to isolate the final key's compilation logic?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-15503::golden"
+      },
+      {
+        "question": "Is the removal of the a ValueError for when is_cycle=True and has_dups(temp) is true intended to allow duplicates in cycle permutations, or should a different check be performed?",
+        "answer": null,
+        "pr_id": "sympy__sympy-12481::golden"
+      },
+      {
+        "question": "Why is the precedence for a single term in a negative product calculated as 0.5*(PRECEDENCE[\"Pow\"]+PRECEDENCE[\"Mul\"]) instead of using a predefined precedence constant?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sympy__sympy-22080::golden"
+      },
+      {
+        "question": "Why was the check for connection.features.has_native_duration_field removed when moving the DurationField logic from as_sql to resolve_expression?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-13128::golden"
+      },
+      {
+        "question": "Was the removal of the is_finite() check in FloatField.validate intentional, or was it accidentally deleted during the cleanup of validators?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-13212::golden"
+      },
+      {
+        "question": "Is the special handling of a[0] when sign == '-' and len(a) != 1 intended to fix a specific parenthesization bug in a certain language's output, or to implement a general rule for negative products?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "sympy__sympy-22080::mutant"
+      },
+      {
+        "question": "Are you intending to allow OneToOneFields without `parent_link=True` to be ignored during the parent link resolution process, rather than raising an `ImproperlyConfigured` error?",
+        "answer": "Yes, the goal is to ensure that the explicit `parent_link` marker is used to identify the parent link regardless of the order of `OneToOneField` references, rather than raising an `ImproperlyConfigured` error.",
+        "pr_id": "django__django-12325::golden"
+      },
+      {
+        "question": "Are you intending to support any module that triggers the autoreloader, or was this specifically meant to replace the hardcoded 'django' check with a more dynamic way to identify the module being run?",
+        "answer": "The goal is to allow autoreloading for Django-based command-line utilities that have their own `__main__` sub-module, rather than only detecting when `-m django` is used.",
+        "pr_id": "django__django-13837::golden"
+      },
+      {
+        "question": "When `summarize` is True, `solve_lookup_type` now wraps the annotation in a `Ref`; is this intended to prevent the expression from being expanded in a subquery or to treat it as a column reference in the outer query?",
+        "answer": "I'm not sure, I don't have that context to hand.",
+        "pr_id": "django__django-16263::golden"
+      }
+    ],
+    "funnel": {
+      "floor_misses": 33,
+      "ceiling_also_missed": 2,
+      "detector_asked": 9,
+      "author_answered": 0,
+      "treatment_recovered": 0,
+      "missed_ids": [
+        "django__django-11138::golden",
+        "django__django-13128::golden",
+        "django__django-13344::golden",
+        "django__django-15503::golden",
+        "django__django-16263::golden",
+        "pydata__xarray-6992::golden",
+        "pytest-dev__pytest-6197::golden",
+        "sphinx-doc__sphinx-8548::golden",
+        "sphinx-doc__sphinx-9229::golden",
+        "sympy__sympy-12419::golden",
+        "sympy__sympy-12419::mutant",
+        "sympy__sympy-12481::mutant",
+        "sympy__sympy-13615::golden",
+        "sympy__sympy-13615::mutant",
+        "sympy__sympy-13877::golden",
+        "sympy__sympy-13877::mutant",
+        "sympy__sympy-14711::mutant",
+        "sympy__sympy-18199::golden",
+        "sympy__sympy-18199::mutant",
+        "sympy__sympy-18698::golden",
+        "sympy__sympy-18698::mutant",
+        "sympy__sympy-21379::golden",
+        "sympy__sympy-21379::mutant",
+        "sympy__sympy-21596::golden",
+        "sympy__sympy-21596::mutant",
+        "sympy__sympy-22080::golden",
+        "sympy__sympy-22080::mutant",
+        "sympy__sympy-22714::mutant",
+        "sympy__sympy-23413::golden",
+        "sympy__sympy-23413::mutant",
+        "sympy__sympy-24539::mutant",
+        "sympy__sympy-24562::golden",
+        "sympy__sympy-24562::mutant"
+      ],
+      "recovered_ids": [],
+      "asked_total": 15,
+      "answered_total": 2
+    },
+    "tests": {
+      "intent_all": {
+        "n": 94,
+        "ceiling": 0.9787,
+        "floor": 0.6489,
+        "treatment": 0.7234,
+        "gap_recovery": 0.2258,
+        "gap_ci": [
+          0.0345,
+          0.4103
+        ],
+        "mcnemar_p": 0.06543,
+        "discordant_treatment_better": 9,
+        "discordant_floor_better": 2,
+        "diff": 0.0745,
+        "diff_ci": [
+          0.0106,
+          0.1489
+        ]
+      },
+      "intent_golden": {
+        "n": 62,
+        "ceiling": 0.9839,
+        "floor": 0.6935,
+        "treatment": 0.7581,
+        "gap_recovery": 0.2222,
+        "gap_ci": [
+          -0.0833,
+          0.4737
+        ],
+        "mcnemar_p": 0.28906,
+        "discordant_treatment_better": 6,
+        "discordant_floor_better": 2,
+        "diff": 0.0645,
+        "diff_ci": [
+          -0.0161,
+          0.1613
+        ]
+      },
+      "intent_mutant": {
+        "n": 32,
+        "ceiling": 0.9688,
+        "floor": 0.5625,
+        "treatment": 0.6562,
+        "gap_recovery": 0.2308,
+        "gap_ci": [
+          0.0,
+          0.4668
+        ],
+        "mcnemar_p": 0.25,
+        "discordant_treatment_better": 3,
+        "discordant_floor_better": 0,
+        "diff": 0.0938,
+        "diff_ci": [
+          0.0,
+          0.2188
+        ]
+      },
+      "defect_mutant": {
+        "n": 32,
+        "ceiling": 0.375,
+        "floor": 0.3125,
+        "treatment": 0.4062,
+        "gap_recovery": 1.5,
+        "gap_ci": [
+          -3.0,
+          5.0
+        ],
+        "mcnemar_p": 0.25,
+        "discordant_treatment_better": 3,
+        "discordant_floor_better": 0,
+        "diff": 0.0938,
+        "diff_ci": [
+          0.0,
+          0.2188
+        ]
+      },
+      "false_alarm_golden": {
+        "n": 62,
+        "ceiling": 0.0,
+        "floor": 0.0161,
+        "treatment": 0.0806,
+        "gap_recovery": -4.0,
+        "gap_ci": [
+          -7.175,
+          -0.5
+        ],
+        "mcnemar_p": 0.125,
+        "discordant_treatment_better": 4,
+        "discordant_floor_better": 0,
+        "diff": 0.0645,
+        "diff_ci": [
+          0.0161,
+          0.129
+        ]
+      }
+    },
+    "review_models": [
+      "gemini-3.5-flash-lite"
+    ],
+    "discordant": {
+      "total": 11,
+      "not_asked": 10,
+      "not_asked_treatment_better": 8,
+      "not_asked_floor_better": 2,
+      "asked_treatment_better": 1,
+      "asked_floor_better": 0
+    },
+    "not_asked_pairs": 79,
+    "judge_model": "gemma-4-31b-it"
+  },
   "v3_design": {
     "available": true,
     "rows": 96,
@@ -1097,14 +1528,15 @@
     "started": "2026-10-26 06:02:41",
     "finished": "2026-10-26 06:54:54",
     "question_oracle": {
-      "model": "llama3.2:3b",
+      "model": null,
       "models_seen": {
-        "llama3.2:3b": 11
+        "llama3.2:3b": 11,
+        "gemma-4-31b-it": 10
       },
-      "n_logged": 11,
+      "n_logged": 21,
       "per_row_in_db": false
     },
-    "question_oracle_model": "llama3.2:3b"
+    "question_oracle_model": null
   },
   "v2_agent_judge": {
     "available": true,

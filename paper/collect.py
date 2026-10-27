@@ -528,6 +528,28 @@ def v3_gemini_block(root: Path) -> dict:
     try:
         out["review_models"] = sorted(r["m"] for r in q(
             conn, "SELECT DISTINCT model m FROM runs WHERE error IS NULL") if r["m"])
+        # Where the detector did not ask, floor and treatment saw identical input, so any
+        # disagreement between them is the reviewer's run-to-run variation, not clarification.
+        rows = q(conn, """
+            WITH f AS (SELECT r.pr_id, j.intent_recovered ir FROM runs r JOIN judgements j
+                       ON j.run_id=r.id WHERE r.condition='stripped_plain' AND r.error IS NULL),
+                 t AS (SELECT r.pr_id, j.intent_recovered ir, r.asked, r.answered FROM runs r
+                       JOIN judgements j ON j.run_id=r.id
+                       WHERE r.condition='stripped_clarify' AND r.error IS NULL)
+            SELECT t.asked, t.answered, t.ir > f.ir better FROM f JOIN t USING(pr_id)
+            WHERE f.ir <> t.ir""")
+        out["discordant"] = {
+            "total": len(rows),
+            "not_asked": sum(1 for r in rows if not r["asked"]),
+            "not_asked_treatment_better": sum(1 for r in rows if not r["asked"] and r["better"]),
+            "not_asked_floor_better": sum(1 for r in rows if not r["asked"] and not r["better"]),
+            "asked_treatment_better": sum(1 for r in rows if r["asked"] and r["better"]),
+            "asked_floor_better": sum(1 for r in rows if r["asked"] and not r["better"]),
+        }
+        out["not_asked_pairs"] = q(conn, """
+            SELECT COUNT(*) n FROM runs t WHERE t.condition='stripped_clarify' AND t.error IS NULL
+            AND t.asked=0 AND EXISTS (SELECT 1 FROM runs f WHERE f.pr_id=t.pr_id
+            AND f.condition='stripped_plain' AND f.error IS NULL)""")[0]["n"]
     finally:
         conn.close()
     out["judge_model"] = _one_model(db, API_LABEL)

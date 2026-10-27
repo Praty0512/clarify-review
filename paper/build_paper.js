@@ -105,6 +105,7 @@ const nTests = parseInt(N.tests_passing, 10);
 // Second-model replication (v3) and judge calibration. Never pooled with v2; AI-vs-AI only.
 const V3 = N.v3_local, J = N.judges, V2A = N.v2_agent_judge, S3 = N.v3_setup, D3 = N.v3_design;
 const RP = N.realpr, DV = N.derived;
+const G3 = N.v3_gemini?.available && N.v3_gemini.tests?.intent_all ? N.v3_gemini : null;
 const T3 = V3.tests, IA3 = T3.intent_all, DM3 = T3.defect_mutant, FA3 = T3.false_alarm_golden;
 const verified = mut.by_status.verified;
 
@@ -157,6 +158,7 @@ const abstractText =
   `was given the chance, and that the binding limit is detector recall: the detector flagged ${F.detector_asked} ` +
   `of the ${F.floor_misses} changes the reviewer misread. Defect detection was low in every condition, including ` +
   "full context, so it is limited by the reviewer rather than by missing intent. " + PROSE("paper.abstract.v3") + " " +
+  (G3 ? `Running the replication set on the original reviewer raised intent recovery from ${pct(G3.tests.intent_all.floor)} to ${pct(G3.tests.intent_all.treatment)}, but ${G3.discordant.not_asked} of the ${G3.discordant.total} changed outcomes came from instances where no question was asked, so the difference is reviewer variation, not clarification. ` : "") +
   "We release the system, harness, " +
   "verified mutants and study log.";
 
@@ -281,6 +283,18 @@ function results() {
   out.push(...figure("fig16_judges.png", "Cohen's kappa between pairs of AI judges. This is AI-vs-AI agreement, not validation against human scorers."));
   out.push(P(PROSE("paper.results.judges_v2")));
   out.push(P(PROSE("paper.results.judges_v3")));
+
+  // ---- V-H: the full v3 rows on the original (v2) reviewer, question, oracle and judge models.
+  if (G3) {
+    const t = G3.tests, ia = t.intent_all, dd = G3.discordant, fu = G3.funnel;
+    out.push(H2("H", "The replication set on the original reviewer"));
+    out.push(P(`Sections V-B and V-F differ in rows and reviewer at once. To separate the two, all ${D3.rows} rows of the replication set were also run on the original reviewer (${G3.review_models.join(", ")}) with the original question, author and judge models (${G3.judge_model}). ${G3.complete_triples} rows completed all three conditions; for the other ${D3.rows - G3.complete_triples} the question model failed with a server error on every attempt.`));
+    out.push(...table(["Measure", "Floor", "Treat.", "Ceiling", "p"], [
+      row3("Intent, all", ia), row3("Intent, golden", t.intent_golden), row3("Intent, mutant", t.intent_mutant),
+      row3("Defect caught", t.defect_mutant), row3("False alarm", t.false_alarm_golden)],
+      [1500, 760, 760, 760, 560], "Judged outcomes, replication set on the original reviewer"));
+    out.push(P(`Intent recovery was ${pct(ia.floor)} with intent withheld, ${pct(ia.treatment)} with clarification and ${pct(ia.ceiling)} with full context: G = ${f2(ia.gap_recovery)} (95% interval ${ci(ia.gap_ci)}, McNemar p = ${f2(ia.mcnemar_p)}). Read alone, the interval excludes zero. The trace says otherwise. The detector asked on ${G3.treatment_asks} of ${G3.treatment_n} instances and the simulated author gave a substantive answer to ${fu.answered_total}; of the ${fu.floor_misses} floor misses it asked on ${fu.detector_asked} and recovered ${fu.treatment_recovered}. Of the ${dd.total} discordant pairs, ${dd.not_asked} came from instances where no question was asked, so floor and treatment sent the reviewer identical input, and they split ${dd.not_asked_treatment_better} to ${dd.not_asked_floor_better}. The difference is the reviewer's run-to-run variation, not clarification. Clarification also raised false alarms on golden patches from ${fr(t.false_alarm_golden.floor, t.false_alarm_golden.n)} to ${fr(t.false_alarm_golden.treatment, t.false_alarm_golden.n)}. The lesson for the design is that one review per condition cannot resolve an effect of this size: repeated reviews per condition, or a reviewer run deterministically, are needed.`));
+  }
   return out;
 }
 
@@ -348,7 +362,7 @@ const threats = [
 
 const conclusion = [
   H("VIII", "Conclusion"),
-  P(`ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change. Evaluating the idea required withholding all natural-language intent, because golden patches document their own. With that manipulation, clarification recovered ${f2(IA.gap_recovery)} of the intent gap on ${v2.complete_triples} instances—in the expected direction, not significant at this size—and a per-instance trace shows it succeeded where it was given the chance, with detector recall as the limit. ${PROSE("paper.conclusion.v3")} Future work is ${joinList([HL ? null : "labelling the 300-PR set and training and freezing the detectors on it", `labelling the ${RP.n_prs} real pull requests already collected (none is labelled yet)`, HJ ? null : "human validation of the judge, beyond the AI-vs-AI calibration reported here", HB ? null : "a paired developer study of usefulness and trust", "deploying the bot against live GitHub", `a Gemini-reviewer run of the ${D3.n_new_rows} rows only the v3 set contains`, "a larger run with a stronger reviewer"].filter(Boolean))}.`),
+  P(`ClarifyReview inserts a decision before critique: ask the author when the intent of a change cannot be read from the change. Evaluating the idea required withholding all natural-language intent, because golden patches document their own. With that manipulation, clarification recovered ${f2(IA.gap_recovery)} of the intent gap on ${v2.complete_triples} instances—in the expected direction, not significant at this size—and a per-instance trace shows it succeeded where it was given the chance, with detector recall as the limit. ${PROSE("paper.conclusion.v3")} Future work is ${joinList([HL ? null : "labelling the 300-PR set and training and freezing the detectors on it", `labelling the ${RP.n_prs} real pull requests already collected (none is labelled yet)`, HJ ? null : "human validation of the judge, beyond the AI-vs-AI calibration reported here", HB ? null : "a paired developer study of usefulness and trust", "deploying the bot against live GitHub", G3 ? "repeated reviews per condition to separate the effect from the reviewer's run-to-run variation" : `a Gemini-reviewer run of the ${D3.n_new_rows} rows only the v3 set contains`, "a larger run with a stronger reviewer"].filter(Boolean))}.`),
 ];
 
 const ack = [
