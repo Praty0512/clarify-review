@@ -488,7 +488,7 @@ def fill_abstract(doc) -> None:
              find(doc, "One page and not exceeding")]
     anchor = instr[1]._p
     proto = instr[1]
-    for i, text in enumerate(C.ABSTRACT + [None]):
+    for i, text in enumerate(C.ABSTRACT + ([None] if getattr(C, "SHOW_KEYWORDS", True) else [])):
         el = copy.deepcopy(proto._p)
         anchor.addprevious(el)
         para = Paragraph(el, proto._parent)

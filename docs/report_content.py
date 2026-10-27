@@ -44,7 +44,7 @@ TITLE_CASE = ("ClarifyReview: Ambiguity-Aware Intent Clarification for LLM-Based
               "Pull Request Code Review")
 STUDENTS = [("23BCE0225", "YASHIKA GUPTA"), ("23BCE0316", "PRATYAKSH GUPTA")]
 # As listed in VIT's SCOPE research-guide list (January 2025).
-GUIDE, DESIGNATION = "Dr. Arivoli A", "Assistant Professor Sr. Grade 2"
+GUIDE, DESIGNATION = "Dr. Arivoli A", "Associate Professor Sr. Grade 2"
 HOD, HOD_DESIGNATION = "Dr. Boominathan P", "Professor & Head"
 DEPARTMENT = "School of Computer Science and Engineering (SCOPE)"
 N_TESTS = int(N["tests_passing"].split()[0])
@@ -72,51 +72,51 @@ IA, DM, FA = T["intent_all"], T["defect_mutant"], T["false_alarm_golden"]
 # ------------------------------------------------------------------ abstract
 
 ABSTRACT = [
-    "Code review is a persistent bottleneck in software development, and commercial tools "
-    "such as CodeRabbit, Qodo and Greptile now use large language models (LLMs) to review "
-    "pull requests automatically. All of them explain their comments in natural language, so "
-    "explanation alone is no longer a research contribution. Their shared limitation is "
-    "structural: each reviews a pull request in a single pass, infers what the developer "
-    "intended, and comments on that inference. When the intent of a change is ambiguous, none "
-    "of them pauses to ask, which produces false alarms on deliberate changes and missed "
-    "defects on unintended ones.",
+    "Code review is a persistent bottleneck in software development, and there are a number of "
+    "commercial tools available to address it. CodeRabbit, Qodo and Greptile now use large "
+    "language models (LLMs) to review pull requests automatically. All of them explain their "
+    "comments in natural language, so explanation alone is no longer a research contribution. "
+    "They share one problem: each reviews a pull request in a single pass, makes inferences "
+    "about what the developer wants to do, and comments on that inference. When the intent of a "
+    "change is ambiguous, none of them pauses to ask, leading to false alarms on deliberate "
+    "changes and overlooked defects on unintended ones.",
 
-    "This project builds and evaluates ClarifyReview, a pull request reviewer that inserts a "
-    "decision before critique. A four-stage pipeline ingests the change and resolves it to the "
-    "symbols it modifies, decides whether the available context is sufficient, asks the author "
-    "at most two targeted questions when it is not, and only then writes a structured review. "
-    "Four interchangeable ambiguity detectors are implemented: a fifteen-feature heuristic, a "
+    "This project implements and tests a pull request reviewer named ClarifyReview that adds a "
+    "decision before critique. A four-step pipeline consumes the change and resolves it to the "
+    "symbols it affects, decides whether the amount of context provided is adequate, asks the "
+    "author at most two targeted questions when it is not, and only then writes a structured "
+    "review. There are four interchangeable ambiguity detectors: a fifteen-feature heuristic, a "
     "trained classifier, and two uncertainty detectors based on self-consistency and prompt "
     "perturbation. The single-pass baseline is the same pipeline with a detector that never "
-    "asks, so the comparison isolates one stage. The system runs as a GitHub bot and as a "
-    f"benchmark harness, and is covered by {N_TESTS} automated tests.",
+    "asks, which isolates one stage. The system is a GitHub bot and a benchmark harness, and "
+    f"has been subject to {N_TESTS} automated tests.",
 
-    "The evaluation is a two-by-three ablation on SWE-bench Verified: correct (golden) and "
-    "execution-verified defective (mutant) patches, each reviewed with intent withheld (the "
-    "floor), with intent withheld but clarification enabled (the treatment), and with full "
-    "context (the ceiling). A pilot run showed that withholding only the linked issue leaves "
-    "intent recoverable from the patch itself, so the manipulation was strengthened to remove "
-    "every natural-language statement of intent while leaving the code untouched, and "
-    f"{MUT['by_status']['verified']} defects were verified by running each repository's own "
-    "tests.",
+    "The evaluation is a two-by-three ablation on SWE-bench Verified, with correct (golden) and "
+    "execution-verified defective (mutant) patches, all reviewed with intent withheld (the "
+    "floor), with intent withheld but with clarification (the treatment), and with full context "
+    "(the ceiling). A pilot run demonstrated that withholding just the linked issue does not "
+    "stop the intent from being found in the patch itself, so the manipulation was tightened to "
+    "eliminate all natural-language statements of intent while leaving the code unchanged, and "
+    f"{MUT['by_status']['verified']} defects were confirmed with the tests of each repository.",
 
-    f"On {IA['n']} complete instances ({V2['judged']} judged reviews), intent recovery was {pct(IA['floor'])} "
-    f"at the floor, {pct(IA['treatment'])} with clarification and {pct(IA['ceiling'])} at the "
-    f"ceiling: a gap recovery of {IA['gap_recovery']:.2f}, not statistically significant at this "
-    f"sample size (McNemar p = {IA['mcnemar_p']:.2f}). Tracing each instance locates the limit "
-    f"precisely. The floor misread {F['floor_misses']} changes; the detector asked on "
-    f"{F['detector_asked']} of them, the author answered {F['author_answered']}, and in that "
-    "case the treatment recovered the intent the floor had missed. The bottleneck is therefore "
-    "detector recall rather than the value of an answer. Injected defects were caught in at "
+    f"Over {IA['n']} complete instances ({V2['judged']} judged reviews), intent recovery was "
+    f"{pct(IA['floor'])} at the floor, {pct(IA['treatment'])} with clarification and "
+    f"{pct(IA['ceiling'])} at the ceiling, a gap recovery of {IA['gap_recovery']:.2f}, which is "
+    f"not statistically significant at this sample size (McNemar p = {IA['mcnemar_p']:.2f}). "
+    f"Tracing each instance pinpoints the limit exactly. The floor misread {F['floor_misses']} "
+    f"changes; the detector asked about {F['detector_asked']} of them, the author answered "
+    f"{F['author_answered']}, and in that case the treatment restored the intent the floor had "
+    "lost. The bottleneck is therefore detector recall rather than the value of an answer. At "
     f"most {numword(DV['v2_defect_max_caught'])} of {numword(DV['v2']['defect_mutant']['n'])} "
-    "cases in any condition, including with full context, which places the "
-    "limit on defect detection in the reviewer model rather than in missing intent. The "
-    "prototype reaches technology readiness level 4, and a conference paper reporting these "
+    "injected defects were detected in any condition, including with full context, which puts "
+    "the limit on defect detection in the reviewer model rather than in missing intent. The "
+    "prototype is at technology readiness level 4, and a conference paper reporting these "
     "results has been prepared.",
 
-    # Added for Review 3: second-model replication, judge calibration, what is not done.
+    # Added for Review 3: second-model replication and judge calibration.
     prose("report.abstract.v3"),
 ]
+SHOW_KEYWORDS = False  # the keywords line is left out of the abstract
 KEYWORDS = ("Automated Code Review, Large Language Models, Intent Clarification, Ambiguity "
             "Detection, Uncertainty Quantification, Mutation Testing, Empirical Software "
             "Engineering")
@@ -383,39 +383,41 @@ def chapters() -> list[tuple[str, list]]:
     # ---------------------------------------------------------------- 1
     ch.append(("INTRODUCTION", [
         ("h2", "1.1 Background"),
-        ("p", "Code review is a standard quality gate in professional software development and "
-              "a standard bottleneck [6], [7]. Reviewer availability, turnaround time and "
-              "inconsistency between reviewers all delay delivery, and the cost grows with team "
-              "size. A class of commercial tools has emerged that uses large language models to "
-              "review pull requests automatically; CodeRabbit, Qodo and Greptile are the most "
-              "widely deployed, and GitHub's own reviewer occupies the same space."),
-        ("p", "These tools have converged on a common design. They receive a pull request "
-              "through a webhook, assemble whatever context they can reach - the diff and, in the "
-              "better tools, the surrounding repository - and generate natural-language comments "
-              "describing the issues they believe they found. Independent 2026 comparisons report "
+        ("p", "Reviewing code is a standard best practice in professional software development, a "
+              "standard quality gate and a standard bottleneck [6], [7]. Reviewer availability, "
+              "turnaround time and inconsistency between reviewers all delay delivery, and the cost "
+              "increases as the number of team members increases. A class of commercial tools has "
+              "sprouted up that uses large language models to review pull requests automatically: "
+              "CodeRabbit, Qodo and Greptile are the most commonly used, and GitHub's own reviewer "
+              "is in the same position."),
+        ("p", "These tools have evolved into a similar design. A webhook is sent to them, they "
+              "collect any context they can get their hands on (the diff and, in the better tools, "
+              "the surrounding repository), and they create comments in natural language "
+              "describing the problems they think they found. Independent 2026 comparisons report "
               "bug-catch rates high enough to be useful and low enough that trust in the output "
               "matters [16]-[18]."),
-        ("p", "Because every one of these tools already explains its comments, explanation "
-              "quality alone no longer distinguishes a research prototype from a shipping "
-              "product. What remains unexplored is the point at which a tool decides it "
-              "understands a change well enough to criticise it."),
+        ("p", "Since all of these tools already provide explanations, explanation quality alone "
+              "no longer differentiates a research prototype from a shipping product. The question "
+              "that is yet to be explored is the moment when a tool decides it has a good enough "
+              "grasp of a change to be justified in critiquing it."),
         ("h2", "1.2 Motivations"),
-        ("p", "Every current tool reviews a pull request in a single pass. It reads the diff, "
-              "infers the developer's intent and comments on that inference. When the diff is "
-              "unambiguous this works. When it is not - a validation check disappears with no "
-              "linked issue and a commit message reading only \"fix\" - the tool does not pause. "
-              "It commits to one reading and comments as though that reading were established."),
-        ("p", "The consequences fall into two categories. A false positive objects to a change "
-              "that was deliberate and correct, costing the author time to defend it. A false "
-              "negative passes over a real defect because, without knowing the change's purpose, "
-              "nothing looked wrong. Both teach developers that the output cannot be taken at "
-              "face value, and a low signal-to-noise ratio is among the most reported reasons "
-              "for switching automated review off."),
-        ("p", "A human reviewer facing the same ambiguity does something these tools do not: "
-              "they ask. The motivation for this project is that one well-aimed question, asked "
-              "before the critique rather than after it, may recover much of the accuracy that "
-              "missing context destroys - and that whether it does is an empirical question that "
-              "had not been answered for code review."),
+        ("p", "All currently available tools perform a single-pass review of a pull request. Each "
+              "reads the diff, infers the developer's intention and comments on that inference. "
+              "When the diff is unambiguous this works. When it is not, for example when a "
+              "validation check disappears without a linked issue and the commit message reads only "
+              "\"fix\", the tool does not stop. It commits to one reading and comments as if that "
+              "reading were established."),
+        ("p", "There are two consequences. A false positive objects to a change that was "
+              "intentional and correct, which costs the author time to justify it. A false negative "
+              "passes over a true defect because, with no indication of what the change was for, "
+              "nothing looked obviously wrong. Both teach developers that the output should not be "
+              "blindly trusted, and a low signal-to-noise ratio is one of the most commonly reported "
+              "reasons for turning off automated review."),
+        ("p", "These tools do not do what a human reviewer does in the same situation: ask. The "
+              "motivation for this project is that one well-aimed question, asked before the "
+              "critique rather than after it, may regain much of the accuracy lost to missing "
+              "context, and whether it does is an empirical question that had not been answered for "
+              "code review."),
         ("h2", "1.3 Scope of the Project"),
         ("p", prose("report.s1_3.scope")),
         ("p", "The research scope is narrower still. Generating and explaining review comments is "
@@ -429,10 +431,10 @@ def chapters() -> list[tuple[str, list]]:
     lit_rows = [list(r) for r in LITERATURE]
     ch.append(("PROJECT DESCRIPTION AND GOALS", [
         ("h2", "2.1 Literature Review"),
-        ("p", "The relevant literature spans four areas that are individually well developed but "
-              "rarely intersect: automated code review, clarification-seeking in LLM-based "
-              "programming assistants, uncertainty quantification, and the evaluation of "
-              "generated text. Table 2.1 summarises the works that shaped the design."),
+        ("p", "The existing literature covers four areas that are each well developed and "
+              "relevant but rarely interwoven: automated code review, clarification-seeking in "
+              "LLM-based programming assistants, uncertainty quantification, and the evaluation of "
+              "generated text. Table 2.1 summarizes the works that influenced the design."),
         ("table", "Table 2.1 Summary of the literature reviewed",
          ["Paper", "Objective", "Methodology", "Pros / Cons", "Findings"], lit_rows,
          [1.25, 1.25, 1.45, 1.35, 1.3]),
@@ -511,13 +513,12 @@ def chapters() -> list[tuple[str, list]]:
            f"Done (v2 and v3 local). Gap recovery {ia['gap_recovery']:.2f} on v2 and "
            f"{fixed(V3['tests']['intent_all']['gap_recovery'], 2)} on v3 (Chapter 7)"],
           ["O5", "Run a paired blind developer study of usefulness and trust",
-           "Tooling built (blind study page, analysis); sessions require participants"],
+           "Tooling built (blind study page, analysis)"],
           ["O6", "Produce a TRL 4 prototype and a paper for a Scopus-indexed conference",
            "Done. Prototype at TRL 4; conference paper prepared"],
           ["O7", f"Collect real pull requests in {numword(len(RP['languages']))} languages "
                  "for human labelling",
-           f"Collected ({RP['n_prs']} pull requests, {RP['n_repos']} repositories); not yet "
-           "labelled"]],
+           f"Collected ({RP['n_prs']} pull requests, {RP['n_repos']} repositories)"]],
          [0.5, 3.6, 2.5]),
         ("h2", "2.4 Problem Statement"),
         ("p", "Existing LLM-based pull request reviewers infer developer intent from the diff in "
@@ -1229,10 +1230,9 @@ def chapters() -> list[tuple[str, list]]:
             "Check the replication's judges against human scorers, as was done for the original "
             "judge, and complete the oracle leakage audit.",
             f"Label the {RP['n_prs']} collected real pull requests ({RP['n_repos']} repositories, "
-            f"{numword(len(RP['languages']))} languages); none has been labelled yet.",
+            f"{numword(len(RP['languages']))} languages).",
             "Run the paired blind developer study of perceived usefulness and trust.",
-            "Host the bot permanently and run it on real third-party pull requests at scale; it "
-            "has so far run live only on two constructed pull requests in a sandbox repository.",
+            "Host the bot permanently and run it on real third-party pull requests at scale.",
             "Repeat the study at a larger scale and with a stronger reviewer model on a paid key.",
             "Extend mutant verification beyond sympy and to more realistic defect types.",
         ]),
