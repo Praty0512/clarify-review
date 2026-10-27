@@ -937,7 +937,7 @@ def chapters() -> list[tuple[str, list]]:
         ("p", "The demonstration runs from a single script and needs no API key: Stages 1 and 2 "
               "run live, and Stages 3 and 4 are replayed from the study's experiment log, so "
               "nothing depends on a model provider being available during a presentation."),
-        ("code", "$ git clone <repository> && cd clarifyReview\n"
+        ("code", "$ git clone https://github.com/Praty0512/clarify-review && cd clarify-review\n"
                  "$ python3 -m venv .venv && .venv/bin/pip install -e '.[dev]'\n"
                  "$ ./demo.sh            # all four stages, offline, about ten seconds\n"
                  "$ ./demo.sh --full     # Stages 3-4 live; needs GEMINI_API_KEY\n"
