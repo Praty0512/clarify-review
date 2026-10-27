@@ -85,6 +85,35 @@ LLAMA_REF = ["v3_local_llama_judge.false_alarm_total:int",
                  "gap_recovery", "gap_ci", "mcnemar_p")
 REALPR = ["realpr.n_prs:int", "realpr.n_repos:int", "realpr.n_labelled:int",
           "realpr.n_annotated:int"]
+LIVE = ["live_demo.n_prs:int", "live_demo.n_asked:int", "live_demo.n_answered:int",
+        "live_demo.n_defects_flagged:int", "live_demo.n_request_changes:int",
+        "live_demo.pr1.score:f2", "live_demo.pr1.threshold:f2",
+        "live_demo.pr1.without_answer.overall_confidence:pct",
+        "live_demo.pr1.overall_confidence:pct", "live_demo.pr1.verdict",
+        "live_demo.pr1.n_findings:int", "live_demo.pr1.answer_round_trip_s:f2",
+        "live_demo.pr2.score:f2", "live_demo.pr2.verdict", "live_demo.pr2.n_findings:int",
+        "live_demo.pr2.finding_severity", "live_demo.pr2.finding_category",
+        "live_demo.pr2.facts.provider_retries:int", "live_demo.pr2.answer_round_trip_s:f2",
+        "live_demo.pr2.reviewer_model", "live_demo.pr2.question_model"]
+LIVE_FRAME = (
+    "Framing: it is a DEMONSTRATION on {n_prs} constructed PRs in the authors' own sandbox "
+    "repository, NOT an evaluation and not a sample. PR 1 was reviewed by the command-line tool "
+    "(review --repo --pr --post, which blocks while waiting for the author) and PR 2 by the "
+    "webhook bot (serve behind a tunnel, which parks the run and resumes on the author's reply). "
+    "In both the heuristic detector asked unprompted (score {pr1.score}, threshold "
+    "{pr1.threshold}) and the author answered on the PR. PR 1: the removed email check was "
+    "intentional (phone-number-only accounts); the review's intent summary recovered that reason "
+    "and its confidence rose from {pr1.without_answer.overall_confidence} (dry run without an "
+    "answer) to {pr1.overall_confidence}; verdict approve, no findings. PR 2: the author's reply "
+    "showed the removal of the disabled-account check was unintended; the bot posted a "
+    "request-changes review with {pr2.n_findings} {pr2.finding_severity} {pr2.finding_category} "
+    "finding. The answer changed the review in both. Reviewer {pr2.reviewer_model}, question "
+    "model {pr2.question_model}. The bot rode out {pr2.facts.provider_retries} transient provider "
+    "500 errors by retrying and ignored its own comments' webhooks (a fact, not a result). "
+    "Limits to state: one laptop behind a tunnel (not permanent hosting), free-tier quota, "
+    "heuristic detector, n = {n_prs} constructed cases chosen by the authors, so no rate or "
+    "effect is estimated. Do not call it validation or evaluation; do not generalise. Live "
+    "deployment beyond a sandbox, on real third-party PRs at scale, remains future work.")
 TESTS = ["derived.tests_passed:int", "derived.tests_skipped:int", "test_files:int"]
 V2_TOK = ["v2_tokens.input:k", "v2_tokens.output:k", "v2_tokens.cache_read:k"]
 DETS = ["detectors.heuristic.recall:pct", "detectors.heuristic.precision:f2",
@@ -135,8 +164,12 @@ add("paper.sys.backends", "paper", "III. ClarifyReview, closing paragraph (after
 add("paper.sys.bot", "paper", "III. ClarifyReview, closing paragraph (follows paper.sys.backends)",
     "1-2 sentences", "30-50", TESTS,
     "Bot robustness: parked runs persist in SQLite across restarts, a timeout sweep, handling of "
-    "rate limits, signed-webhook verification. Must state that it has been exercised end to end "
-    "on a local server, NOT yet against live GitHub.")
+    "rate limits, signed-webhook verification. State that it passes offline end-to-end tests "
+    "and has also been run once on real GitHub in a sandbox repository (the demonstration in the "
+    "next paragraph, paper.live.demo; do not describe it here). Do not claim permanent hosting "
+    "or use on third-party PRs.")
+add("paper.live.demo", "paper", "III. ClarifyReview, new paragraph after paper.sys.bot "
+    "(plain paragraph; no heading)", "one paragraph", "70-110", LIVE, LIVE_FRAME)
 add("paper.method.v3_design", "paper", "IV-F. Second-model replication (v3) (heading is fixed in "
     "code)", "one paragraph", "110-150", V3_SETUP,
     "Design of v3: {v3_design.rows} rows = the v2 set plus {n_new_rows} new rows; all "
@@ -200,12 +233,15 @@ add("paper.disc.replication", "paper", "VI. Discussion, new final paragraph", "o
     "(v2: API judge G vs agent judge G). Keep it short and non-repetitive.")
 add("paper.threats.v3", "paper", "VII. Threats to Validity, new paragraph after the first",
     "one paragraph", "120-170", V3_SETUP[:2] + ["v3_design.n_new_rows:int", "v2.complete_triples:int",
-    "v3_local.complete_triples:int", "v3_setup.question_oracle_model"] + REALPR[:1],
+    "v3_local.complete_triples:int", "v3_setup.question_oracle_model"] + REALPR[:1]
+    + ["live_demo.n_prs:int"],
     "Threats added by v3: samples are small in both studies; the v3 agent judge was chosen after "
     "seeing agreement with the local judge (post hoc); the v3 question/oracle model is small and "
     "its identity is not recorded per DB row (only in the oracle log); the {n_new_rows} new rows "
-    "have no Gemini-reviewer run; the bot has not run against live GitHub. Each as a plain "
-    "statement of limitation.")
+    "have no Gemini-reviewer run; the live GitHub demonstration is {n_prs} constructed PRs in the "
+    "authors' own sandbox repository, run from a laptop behind a tunnel, so it shows the loop "
+    "works but estimates nothing; live deployment on real third-party PRs is still to be done. "
+    "Each as a plain statement of limitation.")
 add("paper.conclusion.v3", "paper", "VIII. Conclusion, one sentence inserted before \"Future work "
     "is ...\"", "1-2 sentences", "35-60", V3_INTENT[:7],
     "A second reviewer (a local 4B model) and a second judge reproduce the null result: G and its "
@@ -219,7 +255,9 @@ add("report.abstract.v3", "report", "Abstract (final paragraph; the template cap
                                            "ceiling", "gap_recovery", "gap_ci"),
     "v3 replication on a local reviewer (null, G with CI), judge calibration across AI judges "
     "(effect size depends on the judge), multi-language support, Ollama backend, bot. List what is "
-    "NOT done in a few words: human judge validation, real-PR labelling, live GitHub deployment. "
+    "NOT done in a few words: human judge validation, real-PR labelling, permanent hosting and "
+    "runs on real third-party PRs at scale. The bot HAS been run live on GitHub on {n_prs} sandbox "
+    "PRs (a demonstration); mention that in a few words if it fits. "
     "The total length is a hard constraint (one-page abstract); if it cannot fit in 60 words, "
     "say so rather than overrun.")
 add("report.s1_3.scope", "report", "1.3 Scope of the Project, first paragraph", "one paragraph",
@@ -227,8 +265,9 @@ add("report.s1_3.scope", "report", "1.3 Scope of the Project, first paragraph", 
     "Replaces the stale text. Scope now: pull request reviewer that detects ambiguous intent and "
     "asks; Python plus JavaScript, TypeScript/TSX, Java, C, C++ and Rust (Python behaviour "
     "unchanged); GitHub bot responding to webhooks; the four stages of Chapter 4. Still out of "
-    "scope: an editor extension and any interface beyond PR comments. Live deployment and human "
-    "studies are pending, not out of scope.",
+    "scope: an editor extension and any interface beyond PR comments. Permanent hosting, runs on "
+    "real third-party PRs at scale and human studies are pending, not out of scope; the bot has "
+    "been demonstrated live on a sandbox repository (Section 6.4).",
     "The project builds and evaluates a pull request reviewer that detects ambiguous intent and "
     "asks before commenting. The system targets Python repositories on GitHub, is delivered as a "
     "bot that responds to pull request webhooks, and is restricted to the four stages described "
@@ -273,8 +312,9 @@ add("report.s5_1_5.bot", "report", "5.1.5 GitHub bot (new subsection; heading fi
     "one paragraph", "90-130", TESTS,
     "Robustness of the live bot: parked runs stored durably so a restart resumes them, a timeout "
     "sweep that publishes an unanswered review, rate-limit handling, signed-webhook "
-    "verification, duplicate-delivery handling. State it was exercised end to end on a local "
-    "server (offline tests) and NOT yet against live GitHub.")
+    "verification, duplicate-delivery handling. State it passes offline end-to-end tests and has "
+    "also run live on GitHub in a sandbox repository (Section 6.4, do not describe the run here). "
+    "Permanent hosting and use on third-party PRs are not done.")
 add("report.s5_2_5.calibration", "report", "5.2.5 Simulated author and judge, new paragraph "
     "after the existing one", "one paragraph", "100-140", JUDGE_MODELS,
     "Method of the judge-calibration analysis: the same context and instructions are given to "
@@ -289,8 +329,12 @@ add("report.s5_2_7.v3_design", "report", "5.2.7 Replication on a local reviewer 
 add("report.s6_3.status", "report", "6.3 Deployment as a GitHub bot, closing paragraph",
     "one paragraph", "60-90", TESTS,
     "What has and has not been shown: the bot, parked-run store and webhook path pass offline "
-    "end-to-end tests on a local server; it has NOT been run against live GitHub. Mention the "
+    "end-to-end tests and have also run against live GitHub in a sandbox repository (the next "
+    "subsection, 6.4, reports it; refer to it, do not repeat it). What is NOT shown: permanent "
+    "hosting (it ran from a laptop behind a tunnel) and any use on third-party PRs. Mention the "
     "Windows demo script alongside demo.sh.")
+add("report.s6_4.live", "report", "6.4 A live run on GitHub (new subsection; heading fixed in "
+    "code, follows report.s6_3.status)", "one paragraph", "120-180", LIVE, LIVE_FRAME)
 add("report.s7_8.setup", "report", "7.8 Replication on a Local Reviewer (v3), first paragraph "
     "(precedes Table 7.4)", "one paragraph", "100-140", V3_SETUP + [
         "v3_local.judge_label", "v3_local.judge_model", "v3_local.judged:int"],
@@ -340,17 +384,27 @@ add("report.s7_10.new_rows", "report", "7.10 Threats to Validity, bullet", "one 
     ["v3_design.n_new_rows:int"],
     "The {n_new_rows} rows added in v3 have no run by the original (Gemini) reviewer, so the two "
     "studies differ in reviewer and judge as well as in rows.")
-add("report.s7_10.bot", "report", "7.10 Threats to Validity, bullet", "one bullet", "20-40", [],
-    "The bot has been exercised end to end on a local server and has not been run against live "
-    "GitHub.")
+add("report.s7_10.bot", "report", "7.10 Threats to Validity, bullet", "one bullet", "25-45",
+    ["live_demo.n_prs:int"],
+    "The live GitHub demonstration (Section 6.4) is {n_prs} constructed PRs in the authors' own "
+    "sandbox repository, run from a laptop behind a tunnel on a free-tier quota; it shows the "
+    "loop works but is not an evaluation, and behaviour on real third-party PRs at scale is "
+    "untested.")
 add("report.conclusion.v3", "report", "8. Conclusion, new paragraph after the findings "
-    "paragraph", "one paragraph", "90-130", V3_INTENT[:7] + J_THREE + REALPR[:2],
+    "paragraph", "one paragraph", "90-130", V3_INTENT[:7] + J_THREE + REALPR[:2]
+    + ["live_demo.n_prs:int"],
     "The v3 replication on a local reviewer and the judge calibration: null result with a "
     "bound, effect size depends on the judge, v2 and v3 never pooled; what remains not done "
-    "(human judge validation, labelling of the {n_prs} real PRs, live deployment) stated as "
-    "not done.")
+    "(human judge validation, labelling of the {n_prs} real PRs, permanent hosting and a run on "
+    "real third-party PRs at scale) stated as not done. One clause may note that the bot has been "
+    "demonstrated live on a sandbox repository ({live_demo.n_prs} PRs); no more.")
 
 # ------------------------------------------------------------------------ deck
+add("deck.demo.live", "deck", "Slide 14 (Project Demonstration), second text line under the two "
+    "figures", "one bullet", "25-35", LIVE,
+    LIVE_FRAME + " Compress to one or two sentences: the full loop (ask, answer, review) ran on "
+    "real GitHub for {n_prs} sandbox PRs, from the command line and from the webhook bot; "
+    "the answer changed the review ({pr2.verdict} on PR 2). A demonstration, not an evaluation.")
 add("deck.abstract.v3", "deck", "Slide 4 (Abstract), end of the Result bullet", "one clause or "
     "sentence", "15-25", ["v3_setup.reviewer_model_name"] + _t("v3_local", "intent_all",
                                                               "gap_recovery", "gap_ci"),

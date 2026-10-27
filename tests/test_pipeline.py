@@ -218,3 +218,33 @@ def test_render_is_byte_identical_without_a_marker_and_prefixed_with_one():
     exchange = ClarificationExchange(questions=StubQuestions().generate(None)[0])
     q = render_questions(exchange)
     assert render_questions(exchange, marker=QUESTION_MARKER) == QUESTION_MARKER + "\n" + q
+
+
+def test_live_condition_label_only_for_real_prs():
+    from clarifyreview.pipeline import (
+        CONDITION_GITHUB_LIVE, CONDITION_STRIPPED_CLARIFY, live_condition)
+    assert live_condition(CONDITION_STRIPPED_CLARIFY, live=True) == CONDITION_GITHUB_LIVE
+    assert live_condition(CONDITION_STRIPPED_CLARIFY, live=False) == "stripped_clarify"
+
+
+@pytest.mark.parametrize("repo,pr,expected", [("o/r", 3, "github_live"),
+                                              (None, None, "stripped_clarify")])
+def test_cli_review_logs_live_runs_as_github_live(monkeypatch, ambiguous_ctx, repo, pr, expected):
+    """`review --repo --pr` is a live run; it must not be logged as the study treatment."""
+    import types
+    from clarifyreview import cli, pipeline
+
+    seen = {}
+
+    def fake_run(self, ctx, **kw):
+        seen["condition"] = self.condition
+        return types.SimpleNamespace(error="stop here")
+
+    monkeypatch.setattr(pipeline.Pipeline, "run", fake_run)
+    monkeypatch.setattr(cli, "_load_context", lambda args: ambiguous_ctx)
+    monkeypatch.setattr(cli, "settings", lambda: types.SimpleNamespace(
+        api_key=lambda: "k", clarifyreview_clarify_timeout=1))
+    args = types.SimpleNamespace(repo=repo, pr=pr, post=False, detector="heuristic", db=None,
+                                 diff=None)
+    assert cli.cmd_review(args) == 1
+    assert seen["condition"] == expected

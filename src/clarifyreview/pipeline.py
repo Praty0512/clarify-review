@@ -29,6 +29,14 @@ CONDITION_STRIPPED_CLARIFY = "stripped_clarify"  # treatment
 CONDITION_GITHUB_LIVE = "github_live"
 
 
+def live_condition(condition: str, live: bool) -> str:
+    """The condition a run is logged under. `clarifyreview review --repo --pr` runs the
+    treatment pipeline on a real PR (the same code path as the bot), so it is logged as
+    `github_live`, the bot's label, rather than as the Study A treatment. The pipeline
+    itself is unchanged; only the label differs, and `run_matrix` never calls this."""
+    return CONDITION_GITHUB_LIVE if live else condition
+
+
 class Pipeline:
     def __init__(
         self,

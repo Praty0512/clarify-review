@@ -96,7 +96,7 @@ def cmd_detect(args) -> int:
 
 def cmd_review(args) -> int:
     from .clarify.loop import GitHubResponder, NullResponder
-    from .pipeline import CONDITION_STRIPPED_CLARIFY, build_condition
+    from .pipeline import CONDITION_STRIPPED_CLARIFY, build_condition, live_condition
     from .review.render import render_review
     from .store import db
 
@@ -125,6 +125,9 @@ def cmd_review(args) -> int:
         CONDITION_STRIPPED_CLARIFY, detector_name=args.detector, responder=responder,
         thresholds=thresholds,
     )
+    # A run on a real PR is a live run, not a Study A row: log it as such so it can
+    # never be counted in the ablation's treatment arm. Local --diff runs are unchanged.
+    pipeline.condition = live_condition(pipeline.condition, live=bool(args.repo and args.pr))
     run = pipeline.run(ctx)
 
     if run.error:

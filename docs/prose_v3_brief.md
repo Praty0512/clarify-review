@@ -27,13 +27,16 @@ if any placeholder is empty. Check your work with `python docs/prose_tool.py che
 3. The v3 agent-judge choice was made **after seeing agreement** with the local judge: disclose
    it as a post hoc choice.
 4. Every not-done item is stated as not done (human judge validation, real-PR labelling,
-   live GitHub deployment, the 300-PR classifier training, Study B).
+   permanent hosting and runs on real third-party PRs at scale, the 300-PR classifier training,
+   Study B).
 5. v2 and v3 are **never pooled**. v3 is a separate study with a different reviewer, a different
    question/oracle model and different rows.
 6. "Gemini" names only the v2 reviewer (gemini-3.5-flash-lite) and the web-app judge. The v2 API
    judge is **gemma-4-31b-it**.
-7. The bot has **not yet been run against live GitHub**; it was exercised end to end on a local
-   server (offline tests).
+7. The bot **has been run on live GitHub**, but only as a demonstration: two constructed PRs in
+   the authors' own sandbox repository (`live_demo.*`), the command-line tool and the webhook bot
+   from a laptop behind a tunnel. It is not an evaluation, estimates no rate, and says nothing
+   about third-party PRs. It also passes offline end-to-end tests.
 8. Voice: IEEE, terse, British spelling (behaviour, analyse, recognise), no em dashes, no
    exclamation, no marketing. Match the existing text around each placeholder.
 
@@ -52,7 +55,7 @@ judge heatmap.
 
 ## Placeholders
 
-Index: paper: 16; report: 23; deck: 5; total 44.
+Index: paper: 17; report: 24; deck: 6; total 47.
 
 
 ---
@@ -101,22 +104,53 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
   | token | value now |
   |---|---|
-  | `{derived.tests_passed:int}` | 445 |
+  | `{derived.tests_passed:int}` | 455 |
   | `{derived.tests_skipped:int}` | 1 |
-  | `{test_files:int}` | 28 |
+  | `{test_files:int}` | 29 |
 
 ### `paper.sys.bot`
 
 * **Appears in:** paper, III. ClarifyReview, closing paragraph (follows paper.sys.backends)
 * **Kind / target length:** 1-2 sentences; 30-50 words
-* **Framing notes:** Bot robustness: parked runs persist in SQLite across restarts, a timeout sweep, handling of rate limits, signed-webhook verification. Must state that it has been exercised end to end on a local server, NOT yet against live GitHub.
+* **Framing notes:** Bot robustness: parked runs persist in SQLite across restarts, a timeout sweep, handling of rate limits, signed-webhook verification. State that it passes offline end-to-end tests and has also been run once on real GitHub in a sandbox repository (the demonstration in the next paragraph, paper.live.demo; do not describe it here). Do not claim permanent hosting or use on third-party PRs.
 * **Allowed tokens (current value):**
 
   | token | value now |
   |---|---|
-  | `{derived.tests_passed:int}` | 445 |
+  | `{derived.tests_passed:int}` | 455 |
   | `{derived.tests_skipped:int}` | 1 |
-  | `{test_files:int}` | 28 |
+  | `{test_files:int}` | 29 |
+
+### `paper.live.demo`
+
+* **Appears in:** paper, III. ClarifyReview, new paragraph after paper.sys.bot (plain paragraph; no heading)
+* **Kind / target length:** one paragraph; 70-110 words
+* **Framing notes:** Framing: it is a DEMONSTRATION on {n_prs} constructed PRs in the authors' own sandbox repository, NOT an evaluation and not a sample. PR 1 was reviewed by the command-line tool (review --repo --pr --post, which blocks while waiting for the author) and PR 2 by the webhook bot (serve behind a tunnel, which parks the run and resumes on the author's reply). In both the heuristic detector asked unprompted (score {pr1.score}, threshold {pr1.threshold}) and the author answered on the PR. PR 1: the removed email check was intentional (phone-number-only accounts); the review's intent summary recovered that reason and its confidence rose from {pr1.without_answer.overall_confidence} (dry run without an answer) to {pr1.overall_confidence}; verdict approve, no findings. PR 2: the author's reply showed the removal of the disabled-account check was unintended; the bot posted a request-changes review with {pr2.n_findings} {pr2.finding_severity} {pr2.finding_category} finding. The answer changed the review in both. Reviewer {pr2.reviewer_model}, question model {pr2.question_model}. The bot rode out {pr2.facts.provider_retries} transient provider 500 errors by retrying and ignored its own comments' webhooks (a fact, not a result). Limits to state: one laptop behind a tunnel (not permanent hosting), free-tier quota, heuristic detector, n = {n_prs} constructed cases chosen by the authors, so no rate or effect is estimated. Do not call it validation or evaluation; do not generalise. Live deployment beyond a sandbox, on real third-party PRs at scale, remains future work.
+* **Allowed tokens (current value):**
+
+  | token | value now |
+  |---|---|
+  | `{live_demo.n_prs:int}` | 2 |
+  | `{live_demo.n_asked:int}` | 2 |
+  | `{live_demo.n_answered:int}` | 2 |
+  | `{live_demo.n_defects_flagged:int}` | 1 |
+  | `{live_demo.n_request_changes:int}` | 1 |
+  | `{live_demo.pr1.score:f2}` | 0.89 |
+  | `{live_demo.pr1.threshold:f2}` | 0.50 |
+  | `{live_demo.pr1.without_answer.overall_confidence:pct}` | 80% |
+  | `{live_demo.pr1.overall_confidence:pct}` | 100% |
+  | `{live_demo.pr1.verdict}` | approve |
+  | `{live_demo.pr1.n_findings:int}` | 0 |
+  | `{live_demo.pr1.answer_round_trip_s:f2}` | 154.57 |
+  | `{live_demo.pr2.score:f2}` | 0.89 |
+  | `{live_demo.pr2.verdict}` | request_changes |
+  | `{live_demo.pr2.n_findings:int}` | 1 |
+  | `{live_demo.pr2.finding_severity}` | major |
+  | `{live_demo.pr2.finding_category}` | correctness |
+  | `{live_demo.pr2.facts.provider_retries:int}` | 3 |
+  | `{live_demo.pr2.answer_round_trip_s:f2}` | 62.79 |
+  | `{live_demo.pr2.reviewer_model}` | gemini-3.5-flash-lite |
+  | `{live_demo.pr2.question_model}` | gemma-4-31b-it |
 
 ### `paper.method.v3_design`
 
@@ -135,8 +169,8 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{v3_setup.runs:int}` | 288 |
   | `{v3_setup.runs_failed:int}` | 0 |
   | `{v3_setup.wall_minutes:int}` | 52 |
-  | `{v3_setup.question_oracle_model}` | llama3.2:3b |
-  | `{v3_setup.question_oracle.n_logged:int}` | 11 |
+  | `{v3_setup.question_oracle_model}` | n/a |
+  | `{v3_setup.question_oracle.n_logged:int}` | 21 |
   | `{v3_design.rows:int}` | 96 |
   | `{v3_design.v2_rows:int}` | 36 |
   | `{v3_design.n_new_rows:int}` | 60 |
@@ -268,6 +302,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{judges.models.gemini_web}` | Gemini 4 Argon (web app) |
   | `{judges.models.api_v3}` | llama3.2:3b |
   | `{judges.gemini_sample.n:int}` | 30 |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
   | `{judges.v2_three_way_intent.all_agree:int}` | 25 |
   | `{judges.v2_three_way_intent.n:int}` | 30 |
 
@@ -414,7 +449,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
 * **Appears in:** paper, VII. Threats to Validity, new paragraph after the first
 * **Kind / target length:** one paragraph; 120-170 words
-* **Framing notes:** Threats added by v3: samples are small in both studies; the v3 agent judge was chosen after seeing agreement with the local judge (post hoc); the v3 question/oracle model is small and its identity is not recorded per DB row (only in the oracle log); the {n_new_rows} new rows have no Gemini-reviewer run; the bot has not run against live GitHub. Each as a plain statement of limitation.
+* **Framing notes:** Threats added by v3: samples are small in both studies; the v3 agent judge was chosen after seeing agreement with the local judge (post hoc); the v3 question/oracle model is small and its identity is not recorded per DB row (only in the oracle log); the {n_new_rows} new rows have no Gemini-reviewer run; the live GitHub demonstration is {n_prs} constructed PRs in the authors' own sandbox repository, run from a laptop behind a tunnel, so it shows the loop works but estimates nothing; live deployment on real third-party PRs is still to be done. Each as a plain statement of limitation.
 * **Allowed tokens (current value):**
 
   | token | value now |
@@ -424,8 +459,9 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{v3_design.n_new_rows:int}` | 60 |
   | `{v2.complete_triples:int}` | 36 |
   | `{v3_local.complete_triples:int}` | 96 |
-  | `{v3_setup.question_oracle_model}` | llama3.2:3b |
+  | `{v3_setup.question_oracle_model}` | n/a |
   | `{realpr.n_prs:int}` | 356 |
+  | `{live_demo.n_prs:int}` | 2 |
 
 ### `paper.conclusion.v3`
 
@@ -453,7 +489,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
 * **Appears in:** report, Abstract (final paragraph; the template caps the abstract at 500 words and one page and the existing text is already about 435 words)
 * **Kind / target length:** one short paragraph; <= 60 (hard cap) words
-* **Framing notes:** v3 replication on a local reviewer (null, G with CI), judge calibration across AI judges (effect size depends on the judge), multi-language support, Ollama backend, bot. List what is NOT done in a few words: human judge validation, real-PR labelling, live GitHub deployment. The total length is a hard constraint (one-page abstract); if it cannot fit in 60 words, say so rather than overrun.
+* **Framing notes:** v3 replication on a local reviewer (null, G with CI), judge calibration across AI judges (effect size depends on the judge), multi-language support, Ollama backend, bot. List what is NOT done in a few words: human judge validation, real-PR labelling, permanent hosting and runs on real third-party PRs at scale. The bot HAS been run live on GitHub on {n_prs} sandbox PRs (a demonstration); mention that in a few words if it fits. The total length is a hard constraint (one-page abstract); if it cannot fit in 60 words, say so rather than overrun.
 * **Allowed tokens (current value):**
 
   | token | value now |
@@ -470,7 +506,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 * **Appears in:** report, 1.3 Scope of the Project, first paragraph
 * **Kind / target length:** one paragraph; 80-120 words
 * **Replaces this existing text:** "The project builds and evaluates a pull request reviewer that detects ambiguous intent and asks before commenting. The system targets Python repositories on GitHub, is delivered as a bot that responds to pull request webhooks, and is restricted to the four stages described in Chapter 4. Multi-language support, an editor extension and any interface beyond pull request comments are out of scope because none of them bears on the contribution."
-* **Framing notes:** Replaces the stale text. Scope now: pull request reviewer that detects ambiguous intent and asks; Python plus JavaScript, TypeScript/TSX, Java, C, C++ and Rust (Python behaviour unchanged); GitHub bot responding to webhooks; the four stages of Chapter 4. Still out of scope: an editor extension and any interface beyond PR comments. Live deployment and human studies are pending, not out of scope.
+* **Framing notes:** Replaces the stale text. Scope now: pull request reviewer that detects ambiguous intent and asks; Python plus JavaScript, TypeScript/TSX, Java, C, C++ and Rust (Python behaviour unchanged); GitHub bot responding to webhooks; the four stages of Chapter 4. Still out of scope: an editor extension and any interface beyond PR comments. Permanent hosting, runs on real third-party PRs at scale and human studies are pending, not out of scope; the bot has been demonstrated live on a sandbox repository (Section 6.4).
 * **Allowed tokens (current value):**
 
   | token | value now |
@@ -532,14 +568,14 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
 * **Appears in:** report, 5.1.5 GitHub bot (new subsection; heading fixed in code)
 * **Kind / target length:** one paragraph; 90-130 words
-* **Framing notes:** Robustness of the live bot: parked runs stored durably so a restart resumes them, a timeout sweep that publishes an unanswered review, rate-limit handling, signed-webhook verification, duplicate-delivery handling. State it was exercised end to end on a local server (offline tests) and NOT yet against live GitHub.
+* **Framing notes:** Robustness of the live bot: parked runs stored durably so a restart resumes them, a timeout sweep that publishes an unanswered review, rate-limit handling, signed-webhook verification, duplicate-delivery handling. State it passes offline end-to-end tests and has also run live on GitHub in a sandbox repository (Section 6.4, do not describe the run here). Permanent hosting and use on third-party PRs are not done.
 * **Allowed tokens (current value):**
 
   | token | value now |
   |---|---|
-  | `{derived.tests_passed:int}` | 445 |
+  | `{derived.tests_passed:int}` | 455 |
   | `{derived.tests_skipped:int}` | 1 |
-  | `{test_files:int}` | 28 |
+  | `{test_files:int}` | 29 |
 
 ### `report.s5_2_5.calibration`
 
@@ -555,6 +591,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{judges.models.gemini_web}` | Gemini 4 Argon (web app) |
   | `{judges.models.api_v3}` | llama3.2:3b |
   | `{judges.gemini_sample.n:int}` | 30 |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
 
 ### `report.s5_2_7.v3_design`
 
@@ -573,8 +610,8 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{v3_setup.runs:int}` | 288 |
   | `{v3_setup.runs_failed:int}` | 0 |
   | `{v3_setup.wall_minutes:int}` | 52 |
-  | `{v3_setup.question_oracle_model}` | llama3.2:3b |
-  | `{v3_setup.question_oracle.n_logged:int}` | 11 |
+  | `{v3_setup.question_oracle_model}` | n/a |
+  | `{v3_setup.question_oracle.n_logged:int}` | 21 |
   | `{v3_design.rows:int}` | 96 |
   | `{v3_design.v2_rows:int}` | 36 |
   | `{v3_design.n_new_rows:int}` | 60 |
@@ -589,14 +626,45 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
 * **Appears in:** report, 6.3 Deployment as a GitHub bot, closing paragraph
 * **Kind / target length:** one paragraph; 60-90 words
-* **Framing notes:** What has and has not been shown: the bot, parked-run store and webhook path pass offline end-to-end tests on a local server; it has NOT been run against live GitHub. Mention the Windows demo script alongside demo.sh.
+* **Framing notes:** What has and has not been shown: the bot, parked-run store and webhook path pass offline end-to-end tests and have also run against live GitHub in a sandbox repository (the next subsection, 6.4, reports it; refer to it, do not repeat it). What is NOT shown: permanent hosting (it ran from a laptop behind a tunnel) and any use on third-party PRs. Mention the Windows demo script alongside demo.sh.
 * **Allowed tokens (current value):**
 
   | token | value now |
   |---|---|
-  | `{derived.tests_passed:int}` | 445 |
+  | `{derived.tests_passed:int}` | 455 |
   | `{derived.tests_skipped:int}` | 1 |
-  | `{test_files:int}` | 28 |
+  | `{test_files:int}` | 29 |
+
+### `report.s6_4.live`
+
+* **Appears in:** report, 6.4 A live run on GitHub (new subsection; heading fixed in code, follows report.s6_3.status)
+* **Kind / target length:** one paragraph; 120-180 words
+* **Framing notes:** Framing: it is a DEMONSTRATION on {n_prs} constructed PRs in the authors' own sandbox repository, NOT an evaluation and not a sample. PR 1 was reviewed by the command-line tool (review --repo --pr --post, which blocks while waiting for the author) and PR 2 by the webhook bot (serve behind a tunnel, which parks the run and resumes on the author's reply). In both the heuristic detector asked unprompted (score {pr1.score}, threshold {pr1.threshold}) and the author answered on the PR. PR 1: the removed email check was intentional (phone-number-only accounts); the review's intent summary recovered that reason and its confidence rose from {pr1.without_answer.overall_confidence} (dry run without an answer) to {pr1.overall_confidence}; verdict approve, no findings. PR 2: the author's reply showed the removal of the disabled-account check was unintended; the bot posted a request-changes review with {pr2.n_findings} {pr2.finding_severity} {pr2.finding_category} finding. The answer changed the review in both. Reviewer {pr2.reviewer_model}, question model {pr2.question_model}. The bot rode out {pr2.facts.provider_retries} transient provider 500 errors by retrying and ignored its own comments' webhooks (a fact, not a result). Limits to state: one laptop behind a tunnel (not permanent hosting), free-tier quota, heuristic detector, n = {n_prs} constructed cases chosen by the authors, so no rate or effect is estimated. Do not call it validation or evaluation; do not generalise. Live deployment beyond a sandbox, on real third-party PRs at scale, remains future work.
+* **Allowed tokens (current value):**
+
+  | token | value now |
+  |---|---|
+  | `{live_demo.n_prs:int}` | 2 |
+  | `{live_demo.n_asked:int}` | 2 |
+  | `{live_demo.n_answered:int}` | 2 |
+  | `{live_demo.n_defects_flagged:int}` | 1 |
+  | `{live_demo.n_request_changes:int}` | 1 |
+  | `{live_demo.pr1.score:f2}` | 0.89 |
+  | `{live_demo.pr1.threshold:f2}` | 0.50 |
+  | `{live_demo.pr1.without_answer.overall_confidence:pct}` | 80% |
+  | `{live_demo.pr1.overall_confidence:pct}` | 100% |
+  | `{live_demo.pr1.verdict}` | approve |
+  | `{live_demo.pr1.n_findings:int}` | 0 |
+  | `{live_demo.pr1.answer_round_trip_s:f2}` | 154.57 |
+  | `{live_demo.pr2.score:f2}` | 0.89 |
+  | `{live_demo.pr2.verdict}` | request_changes |
+  | `{live_demo.pr2.n_findings:int}` | 1 |
+  | `{live_demo.pr2.finding_severity}` | major |
+  | `{live_demo.pr2.finding_category}` | correctness |
+  | `{live_demo.pr2.facts.provider_retries:int}` | 3 |
+  | `{live_demo.pr2.answer_round_trip_s:f2}` | 62.79 |
+  | `{live_demo.pr2.reviewer_model}` | gemini-3.5-flash-lite |
+  | `{live_demo.pr2.question_model}` | gemma-4-31b-it |
 
 ### `report.s7_8.setup`
 
@@ -615,8 +683,8 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{v3_setup.runs:int}` | 288 |
   | `{v3_setup.runs_failed:int}` | 0 |
   | `{v3_setup.wall_minutes:int}` | 52 |
-  | `{v3_setup.question_oracle_model}` | llama3.2:3b |
-  | `{v3_setup.question_oracle.n_logged:int}` | 11 |
+  | `{v3_setup.question_oracle_model}` | n/a |
+  | `{v3_setup.question_oracle.n_logged:int}` | 21 |
   | `{v3_design.rows:int}` | 96 |
   | `{v3_design.v2_rows:int}` | 36 |
   | `{v3_design.n_new_rows:int}` | 60 |
@@ -734,8 +802,10 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{judges.models.gemini_web}` | Gemini 4 Argon (web app) |
   | `{judges.models.api_v3}` | llama3.2:3b |
   | `{judges.gemini_sample.n:int}` | 30 |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
   | `{judges.v2_three_way_intent.all_agree:int}` | 25 |
   | `{judges.v2_three_way_intent.n:int}` | 30 |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
 
 ### `report.s7_9.v2`
 
@@ -839,6 +909,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{v3_local_llama_judge.tests.intent_all.gap_ci:ci}` | -0.31 to 0.52 |
   | `{v3_local_llama_judge.tests.intent_all.mcnemar_p:f2}` | 0.56 |
   | `{v3_local.judge_model}` | claude-sonnet-subagent |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
 
 ### `report.s7_9.robust`
 
@@ -885,6 +956,7 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | token | value now |
   |---|---|
   | `{v3_local.judge_model}` | claude-sonnet-subagent |
+  | `{v3_local.judge_label}` | claude-sonnet-agent |
 
 ### `report.s7_10.oracle`
 
@@ -895,8 +967,8 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 
   | token | value now |
   |---|---|
-  | `{v3_setup.question_oracle_model}` | llama3.2:3b |
-  | `{v3_setup.question_oracle.n_logged:int}` | 11 |
+  | `{v3_setup.question_oracle_model}` | n/a |
+  | `{v3_setup.question_oracle.n_logged:int}` | 21 |
 
 ### `report.s7_10.new_rows`
 
@@ -912,15 +984,19 @@ Index: paper: 16; report: 23; deck: 5; total 44.
 ### `report.s7_10.bot`
 
 * **Appears in:** report, 7.10 Threats to Validity, bullet
-* **Kind / target length:** one bullet; 20-40 words
-* **Framing notes:** The bot has been exercised end to end on a local server and has not been run against live GitHub.
-* **Allowed tokens:** none (no number may appear)
+* **Kind / target length:** one bullet; 25-45 words
+* **Framing notes:** The live GitHub demonstration (Section 6.4) is {n_prs} constructed PRs in the authors' own sandbox repository, run from a laptop behind a tunnel on a free-tier quota; it shows the loop works but is not an evaluation, and behaviour on real third-party PRs at scale is untested.
+* **Allowed tokens (current value):**
+
+  | token | value now |
+  |---|---|
+  | `{live_demo.n_prs:int}` | 2 |
 
 ### `report.conclusion.v3`
 
 * **Appears in:** report, 8. Conclusion, new paragraph after the findings paragraph
 * **Kind / target length:** one paragraph; 90-130 words
-* **Framing notes:** The v3 replication on a local reviewer and the judge calibration: null result with a bound, effect size depends on the judge, v2 and v3 never pooled; what remains not done (human judge validation, labelling of the {n_prs} real PRs, live deployment) stated as not done.
+* **Framing notes:** The v3 replication on a local reviewer and the judge calibration: null result with a bound, effect size depends on the judge, v2 and v3 never pooled; what remains not done (human judge validation, labelling of the {n_prs} real PRs, permanent hosting and a run on real third-party PRs at scale) stated as not done. One clause may note that the bot has been demonstrated live on a sandbox repository ({live_demo.n_prs} PRs); no more.
 * **Allowed tokens (current value):**
 
   | token | value now |
@@ -936,11 +1012,43 @@ Index: paper: 16; report: 23; deck: 5; total 44.
   | `{judges.v2_three_way_intent.n:int}` | 30 |
   | `{realpr.n_prs:int}` | 356 |
   | `{realpr.n_repos:int}` | 16 |
+  | `{live_demo.n_prs:int}` | 2 |
 
 
 ---
 
 ## Deck
+
+### `deck.demo.live`
+
+* **Appears in:** deck, Slide 14 (Project Demonstration), second text line under the two figures
+* **Kind / target length:** one bullet; 25-35 words
+* **Framing notes:** Framing: it is a DEMONSTRATION on {n_prs} constructed PRs in the authors' own sandbox repository, NOT an evaluation and not a sample. PR 1 was reviewed by the command-line tool (review --repo --pr --post, which blocks while waiting for the author) and PR 2 by the webhook bot (serve behind a tunnel, which parks the run and resumes on the author's reply). In both the heuristic detector asked unprompted (score {pr1.score}, threshold {pr1.threshold}) and the author answered on the PR. PR 1: the removed email check was intentional (phone-number-only accounts); the review's intent summary recovered that reason and its confidence rose from {pr1.without_answer.overall_confidence} (dry run without an answer) to {pr1.overall_confidence}; verdict approve, no findings. PR 2: the author's reply showed the removal of the disabled-account check was unintended; the bot posted a request-changes review with {pr2.n_findings} {pr2.finding_severity} {pr2.finding_category} finding. The answer changed the review in both. Reviewer {pr2.reviewer_model}, question model {pr2.question_model}. The bot rode out {pr2.facts.provider_retries} transient provider 500 errors by retrying and ignored its own comments' webhooks (a fact, not a result). Limits to state: one laptop behind a tunnel (not permanent hosting), free-tier quota, heuristic detector, n = {n_prs} constructed cases chosen by the authors, so no rate or effect is estimated. Do not call it validation or evaluation; do not generalise. Live deployment beyond a sandbox, on real third-party PRs at scale, remains future work. Compress to one or two sentences: the full loop (ask, answer, review) ran on real GitHub for {n_prs} sandbox PRs, from the command line and from the webhook bot; the answer changed the review ({pr2.verdict} on PR 2). A demonstration, not an evaluation.
+* **Allowed tokens (current value):**
+
+  | token | value now |
+  |---|---|
+  | `{live_demo.n_prs:int}` | 2 |
+  | `{live_demo.n_asked:int}` | 2 |
+  | `{live_demo.n_answered:int}` | 2 |
+  | `{live_demo.n_defects_flagged:int}` | 1 |
+  | `{live_demo.n_request_changes:int}` | 1 |
+  | `{live_demo.pr1.score:f2}` | 0.89 |
+  | `{live_demo.pr1.threshold:f2}` | 0.50 |
+  | `{live_demo.pr1.without_answer.overall_confidence:pct}` | 80% |
+  | `{live_demo.pr1.overall_confidence:pct}` | 100% |
+  | `{live_demo.pr1.verdict}` | approve |
+  | `{live_demo.pr1.n_findings:int}` | 0 |
+  | `{live_demo.pr1.answer_round_trip_s:f2}` | 154.57 |
+  | `{live_demo.pr2.score:f2}` | 0.89 |
+  | `{live_demo.pr2.verdict}` | request_changes |
+  | `{live_demo.pr2.n_findings:int}` | 1 |
+  | `{live_demo.pr2.finding_severity}` | major |
+  | `{live_demo.pr2.finding_category}` | correctness |
+  | `{live_demo.pr2.facts.provider_retries:int}` | 3 |
+  | `{live_demo.pr2.answer_round_trip_s:f2}` | 62.79 |
+  | `{live_demo.pr2.reviewer_model}` | gemini-3.5-flash-lite |
+  | `{live_demo.pr2.question_model}` | gemma-4-31b-it |
 
 ### `deck.abstract.v3`
 

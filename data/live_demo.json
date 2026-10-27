@@ -1,0 +1,98 @@
+{
+  "exported_at": "2026-10-27",
+  "note": "Demonstration on two constructed PRs in the authors' own sandbox repository; not an evaluation.",
+  "prs": [
+    {
+      "pr_id": "Praty0512/clarifyreview-sandbox#1",
+      "pr_number": 1,
+      "run": {
+        "answer": "It’s intentional: we now allow phone-number-only accounts, so email is optional at login. The phone number is verified in the SMS step instead.",
+        "answer_round_trip_s": 154.57,
+        "answered": true,
+        "asked": true,
+        "condition": "stripped_clarify",
+        "cost_usd": 0.0,
+        "created_at": "2026-10-27 04:52:47",
+        "detector": "heuristic",
+        "entry_point": "cli_post",
+        "findings": [],
+        "flagged_defect": false,
+        "input_tokens": 638,
+        "intent_summary": "Remove the email requirement during user login validation to support phone-number-only accounts.",
+        "latency_ms": 192815,
+        "output_tokens": 55,
+        "overall_confidence": 1.0,
+        "payload_has_review": true,
+        "question": "Is the requirement for users to have an email address for login validation now intentionally removed, or is the email check being moved to a different part of the auth flow?",
+        "question_model": "gemma-4-31b-it",
+        "question_target": "app/auth.py:8-9",
+        "reviewer_model": "gemini-3.5-flash-lite",
+        "run_id": 4,
+        "score": 0.8889,
+        "threshold": 0.5,
+        "timed_out": false,
+        "verdict": "approve"
+      },
+      "url": "https://github.com/Praty0512/clarifyreview-sandbox/pull/1",
+      "without_answer": {
+        "intent_summary": "Remove the email presence check from user login validation in app/auth.py.",
+        "overall_confidence": 0.8,
+        "run_id": 3,
+        "timed_out": true,
+        "verdict": "approve"
+      }
+    },
+    {
+      "facts": {
+        "own_comment_deliveries": 2,
+        "provider_retries": 3,
+        "provider_retry_statuses": [
+          "500"
+        ],
+        "runs_for_pr": 1,
+        "webhook_deliveries": 4
+      },
+      "pr_id": "Praty0512/clarifyreview-sandbox#2",
+      "pr_number": 2,
+      "run": {
+        "answer": "Hmm, I only meant to tidy up the function. Disabled accounts must still be blocked at login; nothing else checks it.",
+        "answer_round_trip_s": 62.79,
+        "answered": true,
+        "asked": true,
+        "condition": "github_live",
+        "cost_usd": 0.0,
+        "created_at": "2026-10-27 05:04:24",
+        "detector": "heuristic",
+        "entry_point": "webhook_bot",
+        "findings": [
+          {
+            "category": "correctness",
+            "file": "app/auth.py",
+            "line": 8,
+            "message": "Removing the check for disabled users allows disabled accounts to authenticate, which violates the requirement that disabled accounts must be blocked.",
+            "severity": "major",
+            "suggested_fix": "Restore the check for disabled users."
+          }
+        ],
+        "flagged_defect": true,
+        "input_tokens": 613,
+        "intent_summary": "Tidy up validation by removing the disabled user check, which contradicts the author's intent to still block disabled accounts at login.",
+        "latency_ms": 2441,
+        "output_tokens": 191,
+        "overall_confidence": 1.0,
+        "payload_has_review": true,
+        "question": "Was the check for `user.get(\"disabled\")` removed because the disabled status is now handled elsewhere, or is the intention to allow disabled users to authenticate?",
+        "question_model": "gemma-4-31b-it",
+        "question_target": "app/auth.py:11-12",
+        "reviewer_model": "gemini-3.5-flash-lite",
+        "run_id": 5,
+        "score": 0.8889,
+        "threshold": 0.5,
+        "timed_out": false,
+        "verdict": "request_changes"
+      },
+      "url": "https://github.com/Praty0512/clarifyreview-sandbox/pull/2"
+    }
+  ],
+  "repo": "Praty0512/clarifyreview-sandbox"
+}

@@ -161,13 +161,16 @@ if any placeholder is empty. Check your work with `python docs/prose_tool.py che
 3. The v3 agent-judge choice was made **after seeing agreement** with the local judge: disclose
    it as a post hoc choice.
 4. Every not-done item is stated as not done (human judge validation, real-PR labelling,
-   live GitHub deployment, the 300-PR classifier training, Study B).
+   permanent hosting and runs on real third-party PRs at scale, the 300-PR classifier training,
+   Study B).
 5. v2 and v3 are **never pooled**. v3 is a separate study with a different reviewer, a different
    question/oracle model and different rows.
 6. "Gemini" names only the v2 reviewer (gemini-3.5-flash-lite) and the web-app judge. The v2 API
    judge is **gemma-4-31b-it**.
-7. The bot has **not yet been run against live GitHub**; it was exercised end to end on a local
-   server (offline tests).
+7. The bot **has been run on live GitHub**, but only as a demonstration: two constructed PRs in
+   the authors' own sandbox repository (`live_demo.*`), the command-line tool and the webhook bot
+   from a laptop behind a tunnel. It is not an evaluation, estimates no rate, and says nothing
+   about third-party PRs. It also passes offline end-to-end tests.
 8. Voice: IEEE, terse, British spelling (behaviour, analyse, recognise), no em dashes, no
    exclamation, no marketing. Match the existing text around each placeholder.
 

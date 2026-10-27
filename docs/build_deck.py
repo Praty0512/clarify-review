@@ -453,14 +453,15 @@ def build(template: Path, out: Path) -> None:
     # 14. Project demonstration ---------------------------------------------
     set_title(demo, "Project Demonstration")
     remove_shape(content(demo))
-    picture(demo, "fig12_demo_detect.png", 450000, 1250000, (W - 1100000) // 2, 4300000)
+    picture(demo, "fig12_demo_detect.png", 450000, 1250000, (W - 1100000) // 2, 3650000)
     picture(demo, "fig13_demo_replay.png", 650000 + (W - 1100000) // 2, 1250000,
-            (W - 1100000) // 2, 4300000)
-    textbox(demo, 450000, 5600000, W - 900000, 600000, [
+            (W - 1100000) // 2, 3650000)
+    textbox(demo, 450000, 4950000, W - 900000, 1300000, [
         ("$ ./demo.sh  |  > .\\demo.ps1  ", "- Stage 2 asks (0.889) on an ambiguous PR and proceeds (0.296) on a "
                          "clear one; then sympy-12481 is replayed: the floor misreads it, "
                          "ClarifyReview asks, gets the answer, and matches the full-context "
-                         "review.")], size=13)
+                         "review."),
+        ("Live on GitHub: ", prose("deck.demo.live"))], size=12)
 
     # 15. Conclusion and future work ----------------------------------------
     bullets(content(concl), [
@@ -477,7 +478,7 @@ def build(template: Path, out: Path) -> None:
                       f"{C.G3['discordant']['total']} changed outcomes had no question asked: "
                       "reviewer variation is as large as the effect.")] if C.G3.get("discordant") else []) + [
         ("Future work: ", f"label the {RP['n_prs']} collected real PRs; repeat reviews per "
-                          "condition; run the developer study; deploy the bot on live GitHub; "
+                          "condition; run the developer study; host the bot permanently and run it on third-party PRs; "
                           "scale up with a stronger reviewer."),
     ], size=14 if C.G3.get("discordant") else 15, gap=5)
 

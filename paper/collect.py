@@ -587,6 +587,52 @@ def tests_by_file(root: Path) -> dict:
     return dict(sorted(counts.items()))
 
 
+def live_demo_block(root: Path) -> dict:
+    """The live GitHub demonstration (two constructed PRs in the authors' sandbox repo),
+    read from the committed snapshot data/live_demo.json. A demonstration, not a study:
+    nothing here enters a study table or a test."""
+    path = root / "data/live_demo.json"
+    if not path.exists():
+        return {"available": False}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    runs = [pr["run"] for pr in raw["prs"]]
+    out: dict = {"available": True, "repo": raw["repo"], "n_prs": len(runs),
+                 "n_asked": sum(r["asked"] for r in runs),
+                 "n_answered": sum(r["answered"] for r in runs),
+                 "n_timed_out": sum(r["timed_out"] for r in runs),
+                 "n_defects_flagged": sum(r["flagged_defect"] for r in runs),
+                 "n_request_changes": sum(r["verdict"] == "request_changes" for r in runs),
+                 "n_approve": sum(r["verdict"] == "approve" for r in runs),
+                 "n_findings": sum(len(r["findings"]) for r in runs),
+                 "n_entry_points": len({r["entry_point"] for r in runs}),
+                 "total_cost_usd": round(sum(r["cost_usd"] for r in runs), 4)}
+    for pr in raw["prs"]:
+        r = pr["run"]
+        d = {"url": pr["url"], "entry_point": r["entry_point"], "detector": r["detector"],
+             "score": r["score"], "threshold": r["threshold"], "asked": r["asked"],
+             "answered": r["answered"], "answer_round_trip_s": r["answer_round_trip_s"],
+             "verdict": r["verdict"], "n_findings": len(r["findings"]),
+             "flagged_defect": r["flagged_defect"], "intent_summary": r["intent_summary"],
+             "overall_confidence": r["overall_confidence"], "reviewer_model": r["reviewer_model"],
+             "question_model": r["question_model"], "latency_s": round(r["latency_ms"] / 1000, 1),
+             "cost_usd": r["cost_usd"], "question": r["question"], "answer": r["answer"]}
+        if r["findings"]:
+            f = r["findings"][0]
+            d.update(finding_severity=f["severity"], finding_category=f["category"],
+                     finding_file=f["file"], finding_line=f["line"])
+        wa = pr.get("without_answer")
+        if wa:
+            d["without_answer"] = {"intent_summary": wa["intent_summary"],
+                                   "overall_confidence": wa["overall_confidence"],
+                                   "verdict": wa["verdict"]}
+            d["confidence_gain_points"] = round(
+                (r["overall_confidence"] - wa["overall_confidence"]) * 100)
+        if pr.get("facts"):
+            d["facts"] = pr["facts"]
+        out[f"pr{pr['pr_number']}"] = d
+    return out
+
+
 def derived_block(nums: dict) -> dict:
     """Counts and small arithmetic the builders and the prose need, computed once.
 
@@ -726,6 +772,23 @@ def acceptance(nums: dict, root: Path = ROOT) -> list[str]:
                         "judge_validation": "runs/judge_agreement.json",
                         "study_b": "runs/study_b_report.json"}[k]).exists():
             check(f"human.{k}.available", v["available"], False)
+    ld = nums.get("live_demo") or {}
+    if ld.get("available"):
+        check("live_demo.n_prs", ld["n_prs"], 2)
+        check("live_demo.n_asked", ld["n_asked"], 2)
+        check("live_demo.n_answered", ld["n_answered"], 2)
+        check("live_demo.n_defects_flagged", ld["n_defects_flagged"], 1)
+        check("live_demo.pr1 verdict", ld["pr1"]["verdict"], "approve")
+        check("live_demo.pr1 findings", ld["pr1"]["n_findings"], 0)
+        check("live_demo.pr1 intent mentions phone", "phone" in ld["pr1"]["intent_summary"], True)
+        near("live_demo.pr1 confidence before", ld["pr1"]["without_answer"]["overall_confidence"], 0.8)
+        near("live_demo.pr1 confidence after", ld["pr1"]["overall_confidence"], 1.0)
+        near("live_demo.pr1 score", ld["pr1"]["score"], 0.8889)
+        check("live_demo.pr2 verdict", ld["pr2"]["verdict"], "request_changes")
+        check("live_demo.pr2 findings", ld["pr2"]["n_findings"], 1)
+        check("live_demo.pr2 severity", ld["pr2"]["finding_severity"], "major")
+        check("live_demo.pr2 entry point", ld["pr2"]["entry_point"], "webhook_bot")
+        near("live_demo.pr2 score", ld["pr2"]["score"], 0.8889)
     if fails:
         raise AssertionError("acceptance failed:\n  " + "\n  ".join(fails))
     return []
@@ -775,6 +838,7 @@ def main(root: Path = ROOT, check: bool = True) -> int:
     nums["judges"] = judges_block(root)
     nums["realpr"] = realpr_block(root)
     nums["v2_tokens"] = v2_tokens(root / "data/study_v2.db")
+    nums["live_demo"] = live_demo_block(root)
     nums["derived"] = derived_block(nums)
     out = root / "paper/numbers.json"
     out.parent.mkdir(parents=True, exist_ok=True)

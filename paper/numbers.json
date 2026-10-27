@@ -379,13 +379,13 @@
       "mean_ms": 31152.4
     }
   },
-  "tests_passing": "446 passed in 3.98s",
+  "tests_passing": "455 passed, 1 skipped in 10.65s",
   "loc": {
-    "src": 6375,
-    "experiments": 5503,
-    "tests": 5284
+    "src": 6510,
+    "experiments": 5653,
+    "tests": 5437
   },
-  "test_files": 28,
+  "test_files": 29,
   "tests_by_file": {
     "tests/test_cli_encoding.py": 2,
     "tests/test_collect_v3.py": 8,
@@ -402,10 +402,11 @@
     "tests/test_judge_context.py": 3,
     "tests/test_judge_study_prep.py": 9,
     "tests/test_labelling_prep.py": 20,
+    "tests/test_live_gaps.py": 7,
     "tests/test_llm_policy.py": 22,
     "tests/test_ollama_backend.py": 30,
     "tests/test_parked_store.py": 8,
-    "tests/test_pipeline.py": 9,
+    "tests/test_pipeline.py": 12,
     "tests/test_prose.py": 6,
     "tests/test_providers.py": 23,
     "tests/test_semantic.py": 7,
@@ -1878,6 +1879,81 @@
     "asked_runs": 6,
     "asked_mean_latency_s": 205.5
   },
+  "live_demo": {
+    "available": true,
+    "repo": "Praty0512/clarifyreview-sandbox",
+    "n_prs": 2,
+    "n_asked": 2,
+    "n_answered": 2,
+    "n_timed_out": 0,
+    "n_defects_flagged": 1,
+    "n_request_changes": 1,
+    "n_approve": 1,
+    "n_findings": 1,
+    "n_entry_points": 2,
+    "total_cost_usd": 0.0,
+    "pr1": {
+      "url": "https://github.com/Praty0512/clarifyreview-sandbox/pull/1",
+      "entry_point": "cli_post",
+      "detector": "heuristic",
+      "score": 0.8889,
+      "threshold": 0.5,
+      "asked": true,
+      "answered": true,
+      "answer_round_trip_s": 154.57,
+      "verdict": "approve",
+      "n_findings": 0,
+      "flagged_defect": false,
+      "intent_summary": "Remove the email requirement during user login validation to support phone-number-only accounts.",
+      "overall_confidence": 1.0,
+      "reviewer_model": "gemini-3.5-flash-lite",
+      "question_model": "gemma-4-31b-it",
+      "latency_s": 192.8,
+      "cost_usd": 0.0,
+      "question": "Is the requirement for users to have an email address for login validation now intentionally removed, or is the email check being moved to a different part of the auth flow?",
+      "answer": "It\u2019s intentional: we now allow phone-number-only accounts, so email is optional at login. The phone number is verified in the SMS step instead.",
+      "without_answer": {
+        "intent_summary": "Remove the email presence check from user login validation in app/auth.py.",
+        "overall_confidence": 0.8,
+        "verdict": "approve"
+      },
+      "confidence_gain_points": 20
+    },
+    "pr2": {
+      "url": "https://github.com/Praty0512/clarifyreview-sandbox/pull/2",
+      "entry_point": "webhook_bot",
+      "detector": "heuristic",
+      "score": 0.8889,
+      "threshold": 0.5,
+      "asked": true,
+      "answered": true,
+      "answer_round_trip_s": 62.79,
+      "verdict": "request_changes",
+      "n_findings": 1,
+      "flagged_defect": true,
+      "intent_summary": "Tidy up validation by removing the disabled user check, which contradicts the author's intent to still block disabled accounts at login.",
+      "overall_confidence": 1.0,
+      "reviewer_model": "gemini-3.5-flash-lite",
+      "question_model": "gemma-4-31b-it",
+      "latency_s": 2.4,
+      "cost_usd": 0.0,
+      "question": "Was the check for `user.get(\"disabled\")` removed because the disabled status is now handled elsewhere, or is the intention to allow disabled users to authenticate?",
+      "answer": "Hmm, I only meant to tidy up the function. Disabled accounts must still be blocked at login; nothing else checks it.",
+      "finding_severity": "major",
+      "finding_category": "correctness",
+      "finding_file": "app/auth.py",
+      "finding_line": 8,
+      "facts": {
+        "own_comment_deliveries": 2,
+        "provider_retries": 3,
+        "provider_retry_statuses": [
+          "500"
+        ],
+        "runs_for_pr": 1,
+        "webhook_deliveries": 4
+      }
+    }
+  },
   "derived": {
     "v2": {
       "intent_all": {
@@ -2072,9 +2148,9 @@
     "uncertainty_instances": 4,
     "uncertainty_s_min": 31,
     "uncertainty_s_max": 45,
-    "tests_passed": 446,
-    "tests_skipped": 0,
-    "tests_seconds": 4,
+    "tests_passed": 455,
+    "tests_skipped": 1,
+    "tests_seconds": 11,
     "v2_asked_latency_minutes": 3,
     "llama_no_defect_claim_pct": 56,
     "v3_asked_on_understood": 9,

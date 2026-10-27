@@ -789,6 +789,7 @@ def chapters() -> list[tuple[str, list]]:
         "test_gh_client.py": "GitHub API client against a mock transport",
         "test_gh_webhook_e2e.py": "Live bot end to end: signed webhooks, parking, timeouts, replay",
         "test_judge_context.py": "Judge context renders findings and ground truth",
+        "test_live_gaps.py": "Live-tool defaults: thresholds, body-reference issues, Python symbols without a checkout",
         "test_judge_study_prep.py": "Judge-validation and developer-study preparation",
         "test_labelling_prep.py": "Labelling-set preparation; never writes a label",
         "test_ollama_backend.py": "Ollama backend against a mock transport",
@@ -974,6 +975,8 @@ def chapters() -> list[tuple[str, list]]:
               "clarifyreview review runs the same pipeline from the command line on a local diff "
               "or a live pull request."),
         ("p", prose("report.s6_3.status")),
+        ("h2", "6.4 A live run on GitHub"),
+        ("p", prose("report.s6_4.live")),
     ]))
 
     # ---------------------------------------------------------------- 7
@@ -1226,8 +1229,8 @@ def chapters() -> list[tuple[str, list]]:
             f"Label the {RP['n_prs']} collected real pull requests ({RP['n_repos']} repositories, "
             f"{numword(len(RP['languages']))} languages); none has been labelled yet.",
             "Run the paired blind developer study of perceived usefulness and trust.",
-            "Deploy the bot against live GitHub; it has so far been exercised end to end only "
-            "on a local server.",
+            "Host the bot permanently and run it on real third-party pull requests at scale; it "
+            "has so far run live only on two constructed pull requests in a sandbox repository.",
             "Repeat the study at a larger scale and with a stronger reviewer model on a paid key.",
             "Extend mutant verification beyond sympy and to more realistic defect types.",
         ]),
