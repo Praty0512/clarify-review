@@ -188,6 +188,11 @@ class Settings(BaseSettings):
     # Frozen on the dev split, then committed. Never tuned on the ablation set.
     thresholds_path: Path = Path("data/thresholds.json")
     classifier_path: Path = Path("data/models/ambiguity_clf.joblib")
+    # Live tool only (CLI ingest/detect/review, webhook bot). Unset means the live
+    # tool uses DEFAULT_THRESHOLDS, NOT data/thresholds.json: that file was frozen
+    # on a degenerate labelled set and is a study artefact. Set
+    # CLARIFYREVIEW_THRESHOLDS_PATH to opt a deployment into a file you trust.
+    clarifyreview_thresholds_path: Path | None = None
 
     # ------------------------------------------------------------- accessors
 

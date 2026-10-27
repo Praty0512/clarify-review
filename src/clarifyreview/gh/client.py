@@ -18,6 +18,7 @@ import httpx
 
 from ..config import settings
 from ..types import LinkedIssue
+from .linked import body_issue_number
 from .settings import bot_settings
 
 log = logging.getLogger(__name__)
@@ -286,6 +287,11 @@ class GitHubClient:
         ]
 
     def get_linked_issue(self, repo: str, number: int) -> LinkedIssue | None:
+        """GraphQL `closingIssuesReferences`, else the PR body's "fixes #N".
+
+        The body fallback matches `experiments/fetch_prs.py` (shared regex in
+        `gh.linked`) and skips a number that is itself a pull request.
+        """
         owner, name = repo.split("/", 1)
         try:
             data = self.graphql(
@@ -294,13 +300,27 @@ class GitHubClient:
             nodes = data["repository"]["pullRequest"]["closingIssuesReferences"]["nodes"]
         except GitHubGraphQLError as exc:
             log.warning("%s#%s: linked-issue lookup failed: %s", repo, number, exc)
-            return None
+            nodes = []
         except (KeyError, TypeError):
+            nodes = []
+        if nodes:
+            n = nodes[0]
+            return LinkedIssue(number=n["number"], title=n["title"] or "", body=n["body"] or "")
+        return self._issue_from_body(repo, number)
+
+    def _issue_from_body(self, repo: str, number: int) -> LinkedIssue | None:
+        try:
+            pr = self.get_pull_request(repo, number)
+            n = body_issue_number((pr or {}).get("body"), repo)
+            if not n:
+                return None
+            obj = self.get_json(f"/repos/{repo}/issues/{n}")
+        except Exception as exc:  # noqa: BLE001 - a dead link or API hiccup is not fatal
+            log.warning("%s#%s: body-reference issue lookup failed: %s", repo, number, exc)
             return None
-        if not nodes:
+        if not isinstance(obj, dict) or "pull_request" in obj:
             return None
-        n = nodes[0]
-        return LinkedIssue(number=n["number"], title=n["title"] or "", body=n["body"] or "")
+        return LinkedIssue(number=n, title=obj.get("title") or "", body=obj.get("body") or "")
 
     def list_comments(self, repo: str, number: int) -> list[dict]:
         return list(self.iter_pages(f"/repos/{repo}/issues/{number}/comments"))

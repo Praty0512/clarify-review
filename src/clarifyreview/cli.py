@@ -36,6 +36,7 @@ def _load_context(args) -> PRContext:
             title=args.title or "",
             commit_messages=[args.commit_msg] if args.commit_msg else [],
             repo_root=Path(args.repo_root) if args.repo_root else None,
+            python_fallback=True,
         )
 
     from .gh.client import GitHubClient
@@ -77,12 +78,14 @@ def cmd_detect(args) -> int:
     from .detect.features import extract
 
     ctx = _load_context(args)
-    det = detect.build(args.detector)
+    thresholds = detect.live_thresholds()
+    det = detect.build(args.detector, thresholds=thresholds)
     decision = det.decide(ctx)
 
     print(f"detector : {decision.detector.value}")
     print(f"decision : {'ASK' if decision.ask else 'PROCEED'}")
     print(f"score    : {decision.score:.3f}  (threshold {decision.threshold:.2f})")
+    print(f"thresholds: {thresholds.source}")
     print(f"why      : {decision.why}")
     if args.features:
         print("\nfeatures:")
@@ -114,8 +117,13 @@ def cmd_review(args) -> int:
             gh, args.repo, args.pr, timeout_s=settings().clarifyreview_clarify_timeout
         )
 
+    from .detect import live_thresholds
+
+    thresholds = live_thresholds()
+    print(f"[stage 2] thresholds: {thresholds.source}", file=sys.stderr)
     pipeline = build_condition(
-        CONDITION_STRIPPED_CLARIFY, detector_name=args.detector, responder=responder
+        CONDITION_STRIPPED_CLARIFY, detector_name=args.detector, responder=responder,
+        thresholds=thresholds,
     )
     run = pipeline.run(ctx)
 

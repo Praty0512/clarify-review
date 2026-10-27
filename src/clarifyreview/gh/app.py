@@ -93,9 +93,9 @@ def _default_client(installation_id: int | None) -> GitHubClient:
 
 
 def _default_detector() -> BaseDetector:
-    from ..detect import build
+    from ..detect import build, live_thresholds
 
-    return build(settings().clarifyreview_detector)
+    return build(settings().clarifyreview_detector, thresholds=live_thresholds())
 
 
 def _default_questions():

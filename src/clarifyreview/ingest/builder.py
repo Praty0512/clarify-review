@@ -30,8 +30,12 @@ def from_raw(
     commit_messages: list[str] | None = None,
     linked_issue: LinkedIssue | None = None,
     repo_root: Path | None = None,
+    python_fallback: bool = False,
 ) -> PRContext:
     """Build a context from a diff plus metadata.
+
+    `python_fallback` is the live tool's opt-in (see `semantic.changed_symbols`);
+    the study never sets it, so its Python symbols are unchanged.
 
     `repo_root`, when given, is a checkout at the PR's base commit; it enables
     full-file symbol extraction and the caller/callee neighbourhood. Without it
@@ -56,7 +60,7 @@ def from_raw(
             pre_images[file] = pre
             post_images[file] = post
 
-    symbols = changed_symbols(hunks, post_images, pre_images)
+    symbols = changed_symbols(hunks, post_images, pre_images, python_fallback=python_fallback)
 
     neighbourhood: list = []
     nb_truncated = False
@@ -99,6 +103,7 @@ def from_github(client, repo: str, number: int, repo_root: Path | None = None) -
         commit_messages=commits,
         linked_issue=issue,
         repo_root=repo_root,
+        python_fallback=True,
     )
 
 

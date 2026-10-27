@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from ..config import settings
 from ..types import DetectorName
 from .base import BaseDetector, Detector, NeverAskDetector, Thresholds
@@ -19,7 +21,23 @@ __all__ = [
     "SamplingUncertaintyDetector",
     "Thresholds",
     "build",
+    "live_thresholds",
 ]
+
+
+def live_thresholds() -> Thresholds:
+    """Thresholds for the live tool (CLI and bot).
+
+    Defaults unless CLARIFYREVIEW_THRESHOLDS_PATH names an existing file. The
+    study keeps using `settings().thresholds_path` through `build()`; nothing here
+    changes that.
+    """
+    path = settings().clarifyreview_thresholds_path
+    if path is not None:
+        if not Path(path).exists():
+            raise FileNotFoundError(f"CLARIFYREVIEW_THRESHOLDS_PATH does not exist: {path}")
+        return Thresholds.load(Path(path))
+    return Thresholds.load(None)
 
 
 def build(name: str | DetectorName, **kwargs) -> BaseDetector:

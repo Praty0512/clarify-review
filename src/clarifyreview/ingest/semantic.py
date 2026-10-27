@@ -355,6 +355,7 @@ _RUST_DEFS = {
     "enum_item": "class",
     "trait_item": "class",
 }
+_PY_DEFS = {"function_definition": "function", "class_definition": "class"}
 _C_DEFS = {"function_definition": "function", "struct_specifier": "class"}
 _CPP_DEFS = {**_C_DEFS, "class_specifier": "class"}
 
@@ -363,7 +364,16 @@ def _c_any_name(n):
     return _c_name(n) if n.type == "function_definition" else _c_class_name(n)
 
 
+def _py_public(node, name: str, path: str) -> bool:
+    return not name.rsplit(".", 1)[-1].startswith("_")
+
+
 LANGS: dict[str, LangSpec] = {
+    # Python is NOT reached through extractor_for (that stays on stdlib ast, so the
+    # study is untouched). This entry exists only for the opt-in live fallback in
+    # `changed_symbols(python_fallback=True)`.
+    "python": LangSpec("python", "tree_sitter_python", "language",
+                       _PY_DEFS, {}, _generic_name, _generic_params, _py_public),
     "javascript": LangSpec("javascript", "tree_sitter_javascript", "language",
                            _JS_DEFS, {}, _js_name, _generic_params, _js_public),
     "typescript": LangSpec("typescript", "tree_sitter_typescript", "language_typescript",
@@ -476,6 +486,11 @@ def extractor_for(path: str) -> SymbolExtractor | None:
 # ------------------------------------------------- git hunk-header fallback
 
 _FALLBACK_RE: dict[str, list[tuple[re.Pattern, str]]] = {
+    # Only consulted for Python when changed_symbols(python_fallback=True).
+    "python": [
+        (re.compile(r"^\s*(?:async\s+)?def\s+(\w+)"), "function"),
+        (re.compile(r"^\s*class\s+(\w+)"), "class"),
+    ],
     "rust": [
         (re.compile(r"\bfn\s+(\w+)"), "function"),
         (re.compile(r"\b(?:struct|enum|trait|impl(?:<[^>]*>)?)\s+(\w+)"), "class"),
@@ -541,8 +556,15 @@ def changed_symbols(
     hunks: list[Hunk],
     post_images: dict[str, str],
     pre_images: dict[str, str] | None = None,
+    *,
+    python_fallback: bool = False,
 ) -> list[ChangedSymbol]:
     """Map diff hunks onto the symbols they touch.
+
+    `python_fallback` is a live-tool opt-in. A Python file whose stdlib-ast parse
+    yields nothing (typically a hunk-only reconstruction, which is not valid
+    Python) is retried with error-tolerant tree-sitter-python and then with the
+    `@@` hunk-section `def`/`class` regex. Off by default: the study never sets it.
 
     `post_images` maps file path to the file's content after the change. When the
     full file is unavailable, pass the reconstructed post-image from
@@ -569,17 +591,31 @@ def changed_symbols(
             results.extend(_diff_symbols(hunks, file, post_syms, pre_syms, overloads=True))
             continue
 
-        results.extend(
-            _diff_symbols(
-                hunks,
-                file,
-                ex.symbols(post_images.get(file, "")),
-                ex.symbols(pre_images.get(file, "")),
-                overloads=False,
-            )
-        )
+        post_syms = ex.symbols(post_images.get(file, ""))
+        pre_syms = ex.symbols(pre_images.get(file, ""))
+        if python_fallback and not post_syms and not pre_syms:
+            results.extend(_python_live_fallback(hunks, file, post_images, pre_images))
+            continue
+        results.extend(_diff_symbols(hunks, file, post_syms, pre_syms, overloads=False))
 
     return sorted(results, key=lambda s: (s.file, s.start_line, s.name))
+
+
+def _python_live_fallback(
+    hunks: list[Hunk], file: str, post_images: dict[str, str], pre_images: dict[str, str]
+) -> list[ChangedSymbol]:
+    """tree-sitter-python (tolerates partial code), then the hunk-section regex."""
+    try:
+        ts = TreeSitterExtractor("python")
+        found = _diff_symbols(
+            hunks, file,
+            ts.symbols(post_images.get(file, "")),
+            ts.symbols(pre_images.get(file, "")),
+            overloads=True,
+        )
+    except Exception:  # noqa: BLE001 - polyglot extra missing; regex still works
+        found = []
+    return found or _fallback_symbols(hunks, file, "python")
 
 
 def _fallback_symbols(hunks: list[Hunk], file: str, lang: str) -> list[ChangedSymbol]:

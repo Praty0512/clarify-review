@@ -39,6 +39,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any, Callable, Protocol
 
+from clarifyreview.gh.linked import FIXES, body_issue_number
+
 csv.field_size_limit(10**8)
 
 VIEW_FULL = "full_context"
@@ -344,15 +346,12 @@ query($owner:String!, $name:String!, $number:Int!) {
   }
 }
 """
-_FIXES = re.compile(r"\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s*:?\s+"
-                    r"(?:([\w.-]+/[\w.-]+))?#(\d+)", re.I)
+# One regex for the live tool and this labelling set (clarifyreview.gh.linked).
+_FIXES = FIXES
 
 
 def _body_issue_number(body: str, repo: str) -> int | None:
-    for m in _FIXES.finditer(body or ""):
-        if m.group(1) is None or m.group(1).lower() == repo.lower():
-            return int(m.group(2))
-    return None
+    return body_issue_number(body, repo)
 
 
 def _diff_from_files(files: list[dict]) -> str:
