@@ -134,7 +134,7 @@ const cite = (...keys) => "[" + keys.map(k => REFS.findIndex(r => r[0] === k) + 
 
 const title = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 200 },
-    children: [R("Asking Before Critiquing: Ambiguity-Aware Intent Clarification for LLM-Based Pull Request Review", { size: 22 })] }),
+    children: [R("ClarifyReview: Ambiguity-Aware Intent Clarification for LLM-Based Pull Request Code Review", { size: 22 })] }),
   ...[["Yashika Gupta", "Pratyaksh Gupta", "Arivoli A"]].map(names => new Paragraph({
     alignment: AlignmentType.CENTER, spacing: { after: 20 },
     children: [R(names.join("        "), { size: 11 })] })),
@@ -449,7 +449,7 @@ const page = { size: { width: 11906, height: 16838 },
                margin: { top: 1080, bottom: 1440, left: 820, right: 820 } };
 const doc = new Document({
   creator: "Yashika Gupta, Pratyaksh Gupta, Arivoli A",
-  title: "Asking Before Critiquing",
+  title: "ClarifyReview: Ambiguity-Aware Intent Clarification for LLM-Based Pull Request Code Review",
   styles: { default: { document: { run: { font: FONT, size: 20 } } } },
   sections: [
     { properties: { page }, children: [...title, ...abstract] },

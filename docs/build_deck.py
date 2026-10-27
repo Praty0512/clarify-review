@@ -485,9 +485,8 @@ def build(template: Path, out: Path) -> None:
     # 16. Outcome ------------------------------------------------------------
     ob = next(s for s in outcome.shapes if s.is_placeholder and s.placeholder_format.idx == 1)
     bullets(ob, [
-        ("International Conference Paper - ", "manuscript prepared: \"Asking Before "
-         "Critiquing: Ambiguity-Aware Intent Clarification for LLM-Based Pull Request "
-         "Review\" (IEEE format); to be submitted to a Scopus-indexed conference."),
+        ("International Conference Paper - ", f"manuscript prepared: \"{C.TITLE_CASE}\" "
+         "(IEEE format); to be submitted to a Scopus-indexed conference."),
         ("Others - working prototype (TRL 4): ", "ClarifyReview GitHub bot and CLI, "
          f"benchmark harness, {C.MUT['by_status']['verified']} execution-verified mutants and the "
          "full study log, released "
