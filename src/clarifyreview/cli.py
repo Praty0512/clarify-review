@@ -146,6 +146,15 @@ def cmd_review(args) -> int:
     if run.clarification and not run.clarification.answered:
         note = "No answer was received, so this review was written without it."
     print(render_review(run.review, detector_note=note))
+    if args.post and args.repo and args.pr:
+        # --post promised the PR a review, so it goes back as a comment too,
+        # marked like the bot's so a later reply never mistakes it for an answer.
+        from .review.render import review_marker
+
+        head_sha = gh.get_pull_request(args.repo, args.pr).get("head", {}).get("sha")
+        gh.post_comment(args.repo, args.pr, render_review(
+            run.review, detector_note=note, marker=review_marker(head_sha)))
+        print(f"[stage 4] review posted to {args.repo}#{args.pr}", file=sys.stderr)
     print(
         f"\n--- ${run.cost_usd:.4f}, {run.latency_ms}ms, "
         f"{run.input_tokens}in/{run.output_tokens}out "
@@ -366,7 +375,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("review", help="the full pipeline")
     add_source(p)
     p.add_argument("--detector", default=settings().clarifyreview_detector)
-    p.add_argument("--post", action="store_true", help="post to the PR and wait for a reply")
+    p.add_argument("--post", action="store_true", help="post the question and the review to the PR, waiting for a reply in between")
     p.add_argument("--db")
     p.set_defaults(func=cmd_review)
 
