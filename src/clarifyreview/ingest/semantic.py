@@ -120,6 +120,7 @@ EXT_LANG: dict[str, str] = {
     "rs": "rust",
     "c": "c", "h": "c",
     "cc": "cpp", "cpp": "cpp", "cxx": "cpp", "hpp": "cpp", "hh": "cpp",
+    "go": "go",
 }
 
 
@@ -311,6 +312,8 @@ def _return_of(node, lang: str) -> str:
     r = target.child_by_field_name("return_type")
     if r is None and lang in ("java", "c", "cpp"):
         r = target.child_by_field_name("type")
+    if r is None and lang == "go":
+        r = target.child_by_field_name("result")
     return _squash(_text(r)).lstrip(": ").strip() if r is not None else ""
 
 
@@ -358,6 +361,29 @@ _RUST_DEFS = {
 _PY_DEFS = {"function_definition": "function", "class_definition": "class"}
 _C_DEFS = {"function_definition": "function", "struct_specifier": "class"}
 _CPP_DEFS = {**_C_DEFS, "class_specifier": "class"}
+_GO_DEFS = {"function_declaration": "function", "method_declaration": "function",
+            "type_spec": "class"}
+
+
+def _go_name(node) -> str | None:
+    """Methods are named Receiver.Method, so they report as methods of their type."""
+    name = _generic_name(node)
+    if name is None or node.type != "method_declaration":
+        return name
+    recv = node.child_by_field_name("receiver")
+    types = [t for t in _walk_types(recv)] if recv is not None else []
+    return f"{types[0]}.{name}" if types else name
+
+
+def _walk_types(node):
+    if node.type == "type_identifier":
+        yield _text(node)
+    for c in node.children:
+        yield from _walk_types(c)
+
+
+def _go_public(node, name: str, path: str) -> bool:
+    return name.rsplit(".", 1)[-1][:1].isupper()
 
 
 def _c_any_name(n):
@@ -390,6 +416,8 @@ LANGS: dict[str, LangSpec] = {
     "cpp": LangSpec("cpp", "tree_sitter_cpp", "language", _CPP_DEFS,
                     {"namespace_definition": _generic_name},
                     _c_any_name, _c_params, _c_public),
+    "go": LangSpec("go", "tree_sitter_go", "language", _GO_DEFS, {},
+                   _go_name, _generic_params, _go_public),
 }
 
 _CLASS_LIKE = frozenset({
@@ -436,7 +464,7 @@ class TreeSitterExtractor:
                 if name:
                     kind = spec.defs[t]
                     if kind == "function":
-                        qualified = "." in name and self._language in ("c", "cpp")
+                        qualified = "." in name and self._language in ("c", "cpp", "go")
                         kind = "method" if enclosing == "class" or qualified else "function"
                     full = f"{prefix}{name}"
                     out.append(

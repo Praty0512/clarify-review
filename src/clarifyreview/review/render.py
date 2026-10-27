@@ -7,7 +7,7 @@ depends on it.
 
 from __future__ import annotations
 
-from ..types import ClarificationExchange, ReviewOutput
+from ..types import ClarificationExchange, Hunk, ReviewFinding, ReviewOutput
 
 # Hidden markers let the bot recognise its own comments. They matter when the bot
 # runs on a personal access token: its question is then posted by the same account
@@ -33,6 +33,8 @@ _SEVERITY_MARK = {
     "minor": "minor",
     "nit": "nit",
 }
+_REVIEW_EVENT = {"approve": "APPROVE", "comment": "COMMENT",
+                 "request_changes": "REQUEST_CHANGES"}
 _VERDICT_LINE = {
     "approve": "No blocking issues found.",
     "comment": "Some comments below, nothing blocking.",
@@ -72,6 +74,55 @@ def render_review(
         lines.append(f"_{detector_note}_")
     out = "\n".join(lines)
     return out if marker is None else f"{marker}\n{out}"
+
+
+def render_inline(f: ReviewFinding) -> str:
+    """One finding as an inline review comment on its line."""
+    lines = [f"{_SEVERITY_MARK[f.severity]} · {f.category} — {f.claim}", "", f"Why: {f.evidence}"]
+    if f.suggested_fix and f.suggested_fix.lower() != "none":
+        lines += ["", f"Suggested: {f.suggested_fix}"]
+    lines += ["", f"_Confidence: {f.confidence:.0%}_"]
+    return "\n".join(lines)
+
+
+def commentable_lines(hunks: list[Hunk]) -> dict[str, set[int]]:
+    """New-side line numbers GitHub accepts an inline comment on: added and
+    context lines inside the diff's hunks."""
+    out: dict[str, set[int]] = {}
+    for h in hunks:
+        line = h.new_start
+        for raw in h.body.splitlines()[1:]:
+            if raw.startswith("-"):
+                continue
+            if raw.startswith(("+", " ")) or raw == "":
+                out.setdefault(h.file, set()).add(line)
+                line += 1
+    return out
+
+
+def build_pr_review(review: ReviewOutput, hunks: list[Hunk]) -> tuple[str, str, list[dict]]:
+    """(event, body, inline comments) for a GitHub pull request review.
+
+    Findings that point at a line inside the diff become inline comments; the
+    rest are listed in the review body, so nothing is dropped.
+    """
+    ok = commentable_lines(hunks)
+    inline: list[dict] = []
+    elsewhere: list[str] = []
+    for f in sorted(review.findings, key=lambda f: (f.file, f.line or 0)):
+        if f.line and f.line in ok.get(f.file, set()):
+            inline.append({"path": f.file, "line": f.line, "side": "RIGHT",
+                           "body": render_inline(f)})
+        else:
+            where = f"`{f.file}`" + (f":{f.line}" if f.line else "")
+            elsewhere.append(f"- {_SEVERITY_MARK[f.severity]} · {where} — {f.claim}")
+    body = [f"**ClarifyReview:** {_VERDICT_LINE[review.verdict]}",
+            "", f"**What this looks like:** {review.intent_summary}"]
+    if inline:
+        body += ["", f"{len(inline)} comment(s) on the changed lines below."]
+    if elsewhere:
+        body += ["", "Outside the changed lines:", *elsewhere]
+    return _REVIEW_EVENT[review.verdict], "\n".join(body), inline
 
 
 def render_questions(exchange: ClarificationExchange, marker: str | None = None) -> str:

@@ -32,6 +32,7 @@ from ..detect.base import BaseDetector
 from ..review.render import (
     ERROR_MARKER,
     QUESTION_MARKER,
+    build_pr_review,
     has_marker,
     render_questions,
     render_review,
@@ -528,8 +529,9 @@ def handle_comment(
             row = db.get_parked(conn, pr_id)
         if row is None or row["state"] != "parked":
             return
-        if not commenter or commenter.lower() != (row["author"] or "").lower():
-            return  # a passing reviewer is not the author
+        is_author = bool(commenter) and commenter.lower() == (row["author"] or "").lower()
+        if not commenter or not (is_author or _may_answer(commenter)):
+            return  # a passing reviewer is not the author (CLARIFYREVIEW_ANSWER_FROM)
 
         with _client(row["installation_id"]) as gh:
             if commenter.lower() == _bot_login():
@@ -538,7 +540,25 @@ def handle_comment(
                 claimed = db.claim_parked(conn, pr_id, get_services().clock())
             if claimed is None:
                 return  # another worker got there first
+            if not is_author:
+                # The reviewer model is told whose word this is, not the author's.
+                body = f"(Answered by @{commenter}, a reviewer, not the PR author.) {body}"
             _resume(gh, claimed, answer=body)
+
+
+def _may_answer(commenter: str) -> bool:
+    """Whether someone other than the PR author may answer the bot's question.
+
+    CLARIFYREVIEW_ANSWER_FROM: "author" (default) - only the author; "anyone" -
+    any human commenter; otherwise a comma-separated list of logins allowed to
+    answer besides the author.
+    """
+    rule = bot_settings().clarifyreview_answer_from.strip().lower()
+    if rule in ("", "author"):
+        return False
+    if rule == "anyone":
+        return True
+    return commenter.lower() in {u.strip().lstrip("@") for u in rule.split(",") if u.strip()}
 
 
 def _resume(gh, row: dict, *, answer: str | None) -> None:
@@ -601,6 +621,10 @@ def _publish(gh, repo: str, number: int, head_sha: str | None, ctx: PRContext, r
     notes = []
     if run.clarification is not None and not run.clarification.answered:
         notes.append(NO_ANSWER_NOTE)
+    if ctx.skipped_files:
+        shown = ", ".join(f"`{p}`" for p in ctx.skipped_files[:5])
+        more = f" and {len(ctx.skipped_files) - 5} more" if len(ctx.skipped_files) > 5 else ""
+        notes.append(f"Not reviewed (generated, vendored or lockfile): {shown}{more}.")
     if ctx.truncated:
         notes.append(TRUNCATED_NOTE)
     if extra_note:
@@ -611,6 +635,14 @@ def _publish(gh, repo: str, number: int, head_sha: str | None, ctx: PRContext, r
         bot_settings().clarifyreview_max_comment_chars,
     )
     comment = gh.post_comment(repo, number, body)
+    if bot_settings().clarifyreview_pr_review and hasattr(gh, "create_review"):
+        try:
+            event, review_body, inline = build_pr_review(run.review, ctx.hunks)
+            gh.create_review(repo, number, commit_id=head_sha, event=event,
+                             body=review_body, comments=inline)
+        except Exception as exc:  # noqa: BLE001 - the summary comment is already up
+            log.warning("%s#%s: could not submit the code review (%s)", repo, number,
+                        type(exc).__name__)
 
     with _conn() as conn:
         run_id = db.record_run(conn, run)

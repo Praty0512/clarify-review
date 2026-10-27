@@ -599,3 +599,24 @@ def test_unfinished_delivery_is_replayed_on_startup(env):
             time.sleep(0.05)
         assert len(env.gh.bot_comments(1, QUESTION_MARKER)) == 1
         assert c.get("/health").json()["parked_runs"] == 1
+
+
+@pytest.mark.parametrize("rule,bob_counts", [
+    ("author", False), ("anyone", True), ("bob, carol", True), ("carol", False)])
+def test_answer_from_setting_decides_whether_a_reviewer_may_answer(
+        monkeypatch, tmp_path, rule, bob_counts):
+    e = Env(monkeypatch, tmp_path, CLARIFYREVIEW_ANSWER_FROM=rule)
+    try:
+        with TestClient(bot.app) as c:
+            send(c, "pull_request", pr_event())
+            e.gh.user_says(1, "bob", "It moved to the gateway.")
+            send(c, "issue_comment", comment_event("It moved to the gateway.", user="bob"))
+            reviews = e.gh.bot_comments(1, "clarifyreview:review")
+            assert len(reviews) == (1 if bob_counts else 0)
+            if bob_counts:
+                # The reviewer model is told the answer came from a reviewer.
+                assert "Answered by @bob, a reviewer, not the PR author." in e.reviewer.contexts[0]
+    finally:
+        bot.set_services(None)
+        reset_settings()
+        reset_bot_settings()

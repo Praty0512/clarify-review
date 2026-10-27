@@ -403,8 +403,8 @@ def test_fallback_without_section_gives_nothing(monkeypatch):
 
 
 def test_unsupported_extension_has_no_symbols():
-    diff = "diff --git a/x.go b/x.go\n--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@ func main() {\n-a\n+b\n"
-    assert extractor_for("x.go") is None
+    diff = "diff --git a/x.kt b/x.kt\n--- a/x.kt\n+++ b/x.kt\n@@ -1,1 +1,1 @@ fun main() {\n-a\n+b\n"
+    assert extractor_for("x.kt") is None
     assert from_raw("o/r#1", diff, title="t").changed_symbols == []
 
 

@@ -249,6 +249,15 @@ class GitHubClient:
     def get_pull_request(self, repo: str, number: int) -> dict:
         return self.get_json(f"/repos/{repo}/pulls/{number}")
 
+    def get_merge_base(self, repo: str, base: str, head: str) -> str | None:
+        """The commit a PR's diff is taken against; None when it cannot be found."""
+        try:
+            data = self.get_json(f"/repos/{repo}/compare/{base}...{head}",
+                                 params={"per_page": 1})
+            return (data.get("merge_base_commit") or {}).get("sha")
+        except (httpx.HTTPError, ValueError, AttributeError):
+            return None
+
     def get_pull_files(self, repo: str, number: int) -> list[dict]:
         return list(self.iter_pages(f"/repos/{repo}/pulls/{number}/files"))
 
@@ -351,6 +360,31 @@ class GitHubClient:
         return None
 
     # ----------------------------------------------------------------- writes
+
+    def create_review(self, repo: str, number: int, *, commit_id: str | None, event: str,
+                      body: str, comments: list[dict]) -> dict:
+        """Submit a pull request review (verdict plus inline comments).
+
+        GitHub refuses APPROVE and REQUEST_CHANGES on your own pull request, which
+        is the normal case with a personal access token; that is retried as a
+        plain COMMENT review. If an inline comment's line is rejected, the review
+        is retried with the comments folded into the body.
+        """
+        def submit(ev: str, cs: list[dict], b: str) -> httpx.Response:
+            payload: dict = {"event": ev, "body": b[:MAX_COMMENT_CHARS], "comments": cs}
+            if commit_id:
+                payload["commit_id"] = commit_id
+            return self._request("POST", f"/repos/{repo}/pulls/{number}/reviews", json=payload)
+
+        r = submit(event, comments, body)
+        if r.status_code == 422 and event != "COMMENT":
+            r = submit("COMMENT", comments, body)
+        if r.status_code == 422 and comments:
+            folded = body + "\n\n" + "\n\n".join(
+                f"**`{c['path']}`:{c['line']}**\n{c['body']}" for c in comments)
+            r = submit("COMMENT", [], folded)
+        r.raise_for_status()
+        return r.json()
 
     def post_comment(self, repo: str, number: int, body: str) -> dict:
         if len(body) > MAX_COMMENT_CHARS:

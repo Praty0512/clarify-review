@@ -15,3 +15,5 @@ runs/
 .bench/
 paper/node_modules/
 src/clarifyreview.egg-info/
+data/checkouts/
+data/bot.log

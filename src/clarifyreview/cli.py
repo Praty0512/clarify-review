@@ -37,6 +37,8 @@ def _load_context(args) -> PRContext:
             commit_messages=[args.commit_msg] if args.commit_msg else [],
             repo_root=Path(args.repo_root) if args.repo_root else None,
             python_fallback=True,
+            live=True,
+            skip_globs=settings().skip_globs(),
         )
 
     from .gh.client import GitHubClient

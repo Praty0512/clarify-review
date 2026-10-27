@@ -184,6 +184,11 @@ class Settings(BaseSettings):
     clarifyreview_detector: str = "heuristic"
     clarifyreview_clarify_timeout: int = 86400
 
+    # Live tool, large repositories (see ingest.checkout and ingest.triage).
+    clarifyreview_checkout: bool = True
+    clarifyreview_checkout_dir: Path = Path("data/checkouts")
+    clarifyreview_skip_globs: str = ""  # comma-separated, on top of the built-in list
+
     uncertainty_samples: int = 8
     # Frozen on the dev split, then committed. Never tuned on the ablation set.
     thresholds_path: Path = Path("data/thresholds.json")
@@ -208,6 +213,9 @@ class Settings(BaseSettings):
             # require a non-empty key (cli.py) working unchanged.
             return self.ollama_api_key or "ollama"
         return self.anthropic_api_key
+
+    def skip_globs(self) -> tuple[str, ...]:
+        return tuple(g.strip() for g in self.clarifyreview_skip_globs.split(",") if g.strip())
 
     def model_for(self, role: str) -> str:
         """Resolve a role to a model id: explicit override, else provider default."""

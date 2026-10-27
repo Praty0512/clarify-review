@@ -24,6 +24,12 @@ class BotSettings(BaseSettings):
     clarifyreview_skip_drafts: bool = True
     # GitHub rejects comments over 65,536 characters; stay well under.
     clarifyreview_max_comment_chars: int = 60000
+    # Also submit the review as a GitHub pull request review: a verdict plus
+    # comments on the changed lines, alongside the summary comment.
+    clarifyreview_pr_review: bool = True
+    # Who may answer the bot's question: "author" (only the PR author), "anyone",
+    # or a comma-separated list of logins allowed besides the author.
+    clarifyreview_answer_from: str = "author"
     # What the `runs.condition` column says for production runs, so they can never
     # be mistaken for a Study A condition.
     clarifyreview_bot_condition: str = "github_live"

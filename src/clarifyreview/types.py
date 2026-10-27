@@ -99,6 +99,8 @@ class PRContext(BaseModel):
 
     languages: list[str] = Field(default_factory=list)
     truncated: bool = False
+    # Live tool: generated, vendored and lockfile changes left out of the diff.
+    skipped_files: list[str] = Field(default_factory=list)
 
     # Set by Stage 3 when a developer (or the benchmark oracle) answers.
     clarification: ClarificationExchange | None = None
@@ -149,7 +151,13 @@ class PRContext(BaseModel):
                     self.neighbourhood, key=lambda s: (s.file, s.start_line, s.name)
                 )
             )
-            parts.append(f"### Surrounding code\n```python\n{snips}\n```")
+            fence = "python" if all(s.file.endswith(".py") for s in self.neighbourhood) else ""
+            parts.append(f"### Surrounding code\n```{fence}\n{snips}\n```")
+
+        if self.skipped_files:
+            shown = ", ".join(self.skipped_files[:20])
+            more = f" and {len(self.skipped_files) - 20} more" if len(self.skipped_files) > 20 else ""
+            parts.append(f"(Left out as generated, vendored or lockfile changes: {shown}{more}.)")
 
         if self.truncated:
             parts.append("(Context was truncated to fit the ingestion token budget.)")

@@ -20,9 +20,9 @@ dependencies = [
 # Heavier, only needed for specific stages.
 bench = ["datasets>=2.19"]              # SWE-bench Verified loading
 embed = ["sentence-transformers>=2.7"]  # better embeddings for detector (a)
-# Symbol extraction for JavaScript, TypeScript/TSX, Java, C, C++ and Rust. Tested:
+# Symbol extraction for JavaScript, TypeScript/TSX, Java, C, C++, Rust and Go. Tested:
 # tree-sitter 0.25.2, python 0.25.0, javascript 0.25.0, typescript 0.23.2,
-# java 0.23.5, rust 0.24.2, c 0.24.2, cpp 0.23.4 (Windows, Python 3.13).
+# java 0.23.5, rust 0.24.2, c 0.24.2, cpp 0.23.4, go 0.23.4 (Windows, Python 3.13).
 polyglot = [
     "tree-sitter>=0.23,<0.26",
     "tree-sitter-python>=0.23,<1",
@@ -32,6 +32,7 @@ polyglot = [
     "tree-sitter-rust>=0.23,<1",
     "tree-sitter-c>=0.23,<1",
     "tree-sitter-cpp>=0.23,<1",
+    "tree-sitter-go>=0.23,<1",
 ]
 app = ["pyjwt[crypto]>=2.8"]            # GitHub App authentication for the live bot
 dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]

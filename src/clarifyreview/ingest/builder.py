@@ -12,6 +12,7 @@ from pathlib import Path
 
 from ..types import LinkedIssue, PRContext
 from .context import build_neighbourhood, estimate_tokens
+from .triage import prioritise
 from .diff import parse_unified_diff, reconstruct_sides, split_by_file
 from .semantic import changed_symbols, language_of
 
@@ -31,6 +32,8 @@ def from_raw(
     linked_issue: LinkedIssue | None = None,
     repo_root: Path | None = None,
     python_fallback: bool = False,
+    live: bool = False,
+    skip_globs: tuple[str, ...] = (),
 ) -> PRContext:
     """Build a context from a diff plus metadata.
 
@@ -41,7 +44,15 @@ def from_raw(
     full-file symbol extraction and the caller/callee neighbourhood. Without it
     the symbol extractor works from the diff's reconstructed images, which is
     less precise but never wrong in a way that favours one condition.
+
+    `live` is the live tool's opt-in for large repositories: generated, vendored
+    and lockfile changes are dropped and source files are budgeted first
+    (`triage.prioritise`), and the neighbourhood covers every supported language
+    rather than Python only. The study never sets it.
     """
+    skipped: list[str] = []
+    if live:
+        diff, skipped = prioritise(diff, skip_globs)
     diff, truncated = _truncate_diff(diff, DIFF_TOKEN_BUDGET)
     hunks = parse_unified_diff(diff)
     by_file = split_by_file(hunks)
@@ -66,7 +77,7 @@ def from_raw(
     nb_truncated = False
     if repo_root is not None:
         neighbourhood, nb_truncated = build_neighbourhood(
-            repo_root, symbols, budget_tokens=NEIGHBOURHOOD_TOKEN_BUDGET
+            repo_root, symbols, budget_tokens=NEIGHBOURHOOD_TOKEN_BUDGET, polyglot=live
         )
 
     return PRContext(
@@ -83,15 +94,25 @@ def from_raw(
         linked_issue=linked_issue,
         languages=sorted({_lang(f) for f in by_file} - {""}),
         truncated=truncated or nb_truncated,
+        skipped_files=skipped,
     )
 
 
 def from_github(client, repo: str, number: int, repo_root: Path | None = None) -> PRContext:
-    """Production path. `client` is a `gh.client.GitHubClient`."""
+    """Production path. `client` is a `gh.client.GitHubClient`.
+
+    Without an explicit `repo_root`, a sparse checkout of the PR's merge base is
+    made when CLARIFYREVIEW_CHECKOUT is on (the default); see `ingest.checkout`.
+    """
+    from ..config import settings
+
+    cfg = settings()
     pr = client.get_pull_request(repo, number)
     diff = client.get_diff(repo, number)
     commits = client.get_commit_messages(repo, number)
     issue = client.get_linked_issue(repo, number)
+    if repo_root is None and cfg.clarifyreview_checkout:
+        repo_root = _checkout_base(client, repo, pr, diff, cfg)
 
     return from_raw(
         pr_id=f"{repo}#{number}",
@@ -104,7 +125,26 @@ def from_github(client, repo: str, number: int, repo_root: Path | None = None) -
         linked_issue=issue,
         repo_root=repo_root,
         python_fallback=True,
+        live=True,
+        skip_globs=cfg.skip_globs(),
     )
+
+
+def _checkout_base(client, repo: str, pr: dict, diff: str, cfg) -> Path | None:
+    """Sparse checkout of the merge base (what GitHub's PR diff is taken against)."""
+    from .checkout import prune, sparse_checkout
+    from .triage import split_blocks
+
+    base = (pr.get("base") or {}).get("sha", "")
+    head = (pr.get("head") or {}).get("sha", "")
+    sha = client.get_merge_base(repo, base, head) if base and head else None
+    paths = [p for p, _ in split_blocks(prioritise(diff, cfg.skip_globs())[0]) if p]
+    if not sha or not paths:
+        return None
+    root = cfg.clarifyreview_checkout_dir
+    dest = sparse_checkout(repo, sha, paths, root, token=cfg.github_token)
+    prune(root)
+    return dest
 
 
 # ------------------------------------------------------------------ helpers
@@ -112,13 +152,9 @@ def from_github(client, repo: str, number: int, repo_root: Path | None = None) -
 
 def _lang(path: str) -> str:
     """Display name of a file's language ("" when unsupported). TSX reports as
-    typescript; Go is labelled for the prompt only, it has no symbol extractor."""
+    typescript."""
     lang = language_of(path)
-    if lang == "tsx":
-        return "typescript"
-    if lang:
-        return lang
-    return "go" if path.endswith(".go") else ""
+    return "typescript" if lang == "tsx" else lang
 
 
 def _read_file(root: Path | None, rel: str) -> str | None:

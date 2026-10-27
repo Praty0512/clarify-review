@@ -10,6 +10,7 @@ The estimate is calibrated conservatively, so the real count comes in under it.
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 from ..types import ChangedSymbol, CodeSnippet
@@ -26,17 +27,22 @@ def build_neighbourhood(
     changed: list[ChangedSymbol],
     budget_tokens: int = 6000,
     max_per_symbol: int = 2,
+    *,
+    polyglot: bool = False,
 ) -> tuple[list[CodeSnippet], bool]:
     """Find callers and callees of each changed symbol, one hop out.
 
     Returns the snippets plus whether the budget forced truncation. Callees are
     collected before callers because a reviewer needs to know what the changed
     code calls more often than who calls it.
+
+    `polyglot` (live tool only) indexes every language with a symbol extractor,
+    not just Python; the Python part of the index is built exactly as before.
     """
     if not repo_root.exists():
         return [], False
 
-    index = _index_repo(repo_root)
+    index = _index_repo(repo_root, polyglot=polyglot)
     snippets: list[CodeSnippet] = []
     seen: set[tuple[str, str]] = set()
 
@@ -48,7 +54,9 @@ def build_neighbourhood(
         if source is None:
             continue
 
-        for name in _callees(source, sym)[:max_per_symbol]:
+        callees = _callees(source, sym) if sym.file.endswith(".py") else (
+            _callees_any(source, sym) if polyglot else [])
+        for name in callees[:max_per_symbol]:
             loc = index.get(name)
             if loc is None or (loc[0], name) in seen:
                 continue
@@ -91,7 +99,12 @@ def _read(path: Path) -> str | None:
         return None
 
 
-def _index_repo(root: Path, max_files: int = 4000) -> dict[str, tuple[str, int, str]]:
+_SKIP_PARTS = {".venv", "node_modules", ".git", "build", "dist"}
+
+
+def _index_repo(
+    root: Path, max_files: int = 4000, *, polyglot: bool = False
+) -> dict[str, tuple[str, int, str]]:
     """Map top-level symbol name -> (relative path, line, source text)."""
     index: dict[str, tuple[str, int, str]] = {}
     for i, path in enumerate(sorted(root.rglob("*.py"))):
@@ -113,7 +126,59 @@ def _index_repo(root: Path, max_files: int = 4000) -> dict[str, tuple[str, int, 
                 end = getattr(node, "end_lineno", node.lineno) or node.lineno
                 body = "\n".join(lines[node.lineno - 1 : min(end, node.lineno + 40)])
                 index.setdefault(node.name, (rel, node.lineno, body))
+    if polyglot:
+        _index_other_languages(root, index, max_files)
     return index
+
+
+def _index_other_languages(
+    root: Path, index: dict[str, tuple[str, int, str]], max_files: int
+) -> None:
+    """Add non-Python symbols through the tree-sitter extractors."""
+    from .semantic import extractor_for, language_of
+
+    seen = 0
+    for path in sorted(root.rglob("*")):
+        if seen >= max_files:
+            break
+        rel = path.relative_to(root).as_posix()
+        if rel.endswith(".py") or not language_of(rel) or not path.is_file():
+            continue
+        if any(p in _SKIP_PARTS for p in path.parts):
+            continue
+        seen += 1
+        ex = extractor_for(rel)
+        source = _read(path) if ex is not None else None
+        if source is None:
+            continue
+        lines = source.splitlines()
+        for sym in ex.symbols(source):
+            body = "\n".join(lines[sym.start - 1 : min(sym.end, sym.start + 40)])
+            index.setdefault(sym.name.rsplit(".", 1)[-1], (rel, sym.start, body))
+
+
+_CALL_RE = re.compile(r"\b([A-Za-z_]\w*)\s*(?:<[^<>()]*>)?\s*\(")
+_NOT_CALLS = {
+    "if", "for", "while", "switch", "return", "catch", "sizeof", "typeof", "new", "match",
+    "function", "fn", "await", "super", "this", "self", "assert", "defined", "else",
+}
+
+
+def _callees_any(source: str, sym: ChangedSymbol) -> list[str]:
+    """Names called inside a changed non-Python symbol, by a lexical scan of
+    the symbol's body as the extractor bounds it."""
+    from .semantic import extractor_for
+
+    ex = extractor_for(sym.file)
+    if ex is None:
+        return []
+    match = next((s for s in ex.symbols(source) if s.start == sym.start_line), None)
+    if match is None:
+        return []
+    body = "\n".join(source.splitlines()[match.start : match.end])  # skip the header line
+    own = sym.name.rsplit(".", 1)[-1]
+    names = [n for n in _CALL_RE.findall(body) if n not in _NOT_CALLS and n != own]
+    return sorted(dict.fromkeys(names))
 
 
 def _callees(source: str, sym: ChangedSymbol) -> list[str]:
