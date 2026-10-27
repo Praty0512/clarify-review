@@ -348,8 +348,7 @@ def fill_front_matter(doc) -> None:
             remove(el)
             dropped += 1
         el = nxt
-    # The Head of Department's name is not known to us; it stays highlighted.
-    set_runs(find(doc, "<< Head of the"), [("<< Head of the Department >>", True)])
+    set_runs(find(doc, "<< Head of the"), [(f"{C.HOD}, {C.HOD_DESIGNATION}", False)])
     set_text(find(doc, "<< Programme"), "B.Tech. Computer Science and Engineering")
 
     # Acknowledgements, in the team's voice.
@@ -364,10 +363,9 @@ def fill_front_matter(doc) -> None:
              "and Engineering (SCOPE), for his unwavering support and encouragement. His "
              "leadership and vision have greatly inspired us to strive for excellence.")
     set_runs(find(doc, "I express my profound"),
-             [("We express our profound appreciation to ", False),
-              ("<Head of Department's Name>", True), (", the Head of the ", False),
-              ("<Department Name>", True),
-              (", for the insightful guidance and continuous support extended to us. The "
+             [(f"We express our profound appreciation to {C.HOD}, "
+               f"{C.HOD_DESIGNATION.replace('&', 'and')}, {C.DEPARTMENT}, for the insightful "
+               "guidance and continuous support extended to us. The "
                "Department's commitment to a collaborative and supportive atmosphere has greatly "
                "enhanced our learning experience.", False)])
     set_text(find(doc, "I am immensely thankful"),

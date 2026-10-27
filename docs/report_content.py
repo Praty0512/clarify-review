@@ -45,6 +45,8 @@ TITLE_CASE = ("ClarifyReview: Ambiguity-Aware Intent Clarification for LLM-Based
 STUDENTS = [("23BCE0225", "YASHIKA GUPTA"), ("23BCE0316", "PRATYAKSH GUPTA")]
 # As listed in VIT's SCOPE research-guide list (January 2025).
 GUIDE, DESIGNATION = "Dr. Arivoli A", "Assistant Professor Sr. Grade 2"
+HOD, HOD_DESIGNATION = "Dr. Boominathan P", "Professor & Head"
+DEPARTMENT = "School of Computer Science and Engineering (SCOPE)"
 N_TESTS = int(N["tests_passing"].split()[0])
 N_TEST_FILES = N["test_files"]
 
