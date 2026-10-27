@@ -502,12 +502,15 @@ def build(template: Path, out: Path) -> None:
         # a:buNone must follow the spacing elements in a:pPr, or PowerPoint
         # rejects the file.
         pPr = p._p.get_or_add_pPr()
-        bu = pPr.makeelement(qn("a:buNone"), {})
-        spacing = [c for c in pPr if c.tag in (qn("a:lnSpc"), qn("a:spcBef"), qn("a:spcAft"))]
-        if spacing:
-            spacing[-1].addnext(bu)
-        else:
-            pPr.insert(0, bu)
+        # bullets() may already have added one; a second a:buNone is invalid, and
+        # PowerPoint 2013 refuses the whole file (newer versions repair it silently).
+        if pPr.find(qn("a:buNone")) is None:
+            bu = pPr.makeelement(qn("a:buNone"), {})
+            spacing = [c for c in pPr if c.tag in (qn("a:lnSpc"), qn("a:spcBef"), qn("a:spcAft"))]
+            if spacing:
+                spacing[-1].addnext(bu)
+            else:
+                pPr.insert(0, bu)
         pPr.set("marL", "0")
         pPr.set("indent", "0")
 

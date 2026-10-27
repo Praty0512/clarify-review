@@ -640,10 +640,22 @@ def main(argv=None) -> int:
     ap.add_argument("--template", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--no-pdf", action="store_true", help="skip the Word page-number pass")
+    ap.add_argument("--pages-from", metavar="PDF",
+                    help="take page numbers from this PDF of the --no-pdf build, saved from "
+                         "any Word (desktop or web), instead of driving Word here")
     args = ap.parse_args(argv)
     template, out = Path(args.template).expanduser(), Path(args.out).expanduser()
 
     w = build(template, out, {})
+    if args.pages_from:
+        # Filling the page column does not reflow the document, so one pass is enough.
+        pages = locate_pages(Path(args.pages_from).expanduser(), w)
+        missing = [k for k, v in pages.items() if not v]
+        build(template, out, pages)
+        print("wrote", out, "(page numbers from", args.pages_from + ")")
+        if missing:
+            print("could not locate:", missing)
+        return 0
     if args.no_pdf:
         print("wrote", out, "(no page numbers)")
         return 0
